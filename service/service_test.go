@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/dedis/cothority_template"
 	"github.com/stretchr/testify/require"
@@ -22,7 +23,7 @@ func TestService_Clock(t *testing.T) {
 	// don't register the tree or entitylist
 	hosts, roster, _ := local.GenTree(5, true)
 	defer local.CloseAll()
-
+	//fmt.Println(reflect.TypeOf(roster.List).String())
 	services := local.GetServices(hosts, templateID)
 
 	for _, s := range services {
@@ -55,4 +56,21 @@ func TestService_Count(t *testing.T) {
 		require.Nil(t, err)
 		require.Equal(t, 1, count.Count)
 	}
+}
+
+func TestService_Init(t *testing.T) {
+	local := onet.NewTCPTest(tSuite)
+	// generate 5 hosts, they don't connect, they process messages, and they
+	// don't register the tree or entitylist
+	hosts, roster, _ := local.GenTree(5, true)
+	defer local.CloseAll()
+	//fmt.Println(reflect.TypeOf(roster.List).String())
+	services := local.GetServices(hosts, templateID)
+
+	for _, s := range services {
+		log.Lvl2("Sending request to", s)
+		s.(*Service).InitRequest(
+			&template.InitRequest{SsRoster: roster})
+	}
+	time.Sleep(10000 * time.Millisecond)
 }

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dedis/cothority_template"
-	"github.com/dedis/cothority_template/gentree"
 	"github.com/dedis/cothority_template/protocol"
 	"go.dedis.ch/onet/v3"
 	"go.dedis.ch/onet/v3/log"
@@ -32,9 +31,9 @@ func init() {
 	templateID, err = onet.RegisterNewService(template.ServiceName, newService)
 	log.ErrFatal(err)
 	network.RegisterMessage(&storage{})
-	unwitnessedMessageMsgID = network.RegisterMessage(&UnwitnessedMessage{})
-	witnessedMessageMsgID = network.RegisterMessage(&WitnessedMessage{})
-	acknowledgementMessageMsgID = network.RegisterMessage(&AcknowledgementMessage{})
+	unwitnessedMessageMsgID = network.RegisterMessage(&template.UnwitnessedMessage{})
+	witnessedMessageMsgID = network.RegisterMessage(&template.WitnessedMessage{})
+	acknowledgementMessageMsgID = network.RegisterMessage(&template.AcknowledgementMessage{})
 
 }
 
@@ -43,7 +42,7 @@ type Service struct {
 	// We need to embed the ServiceProcessor, so that incoming messages
 	// are correctly handled.
 	*onet.ServiceProcessor
-	Nodes   gentree.LocalityNodes
+	roster  *onet.Roster
 	storage *storage
 }
 
@@ -57,24 +56,20 @@ type storage struct {
 	sync.Mutex
 }
 
-func (s *Service) InitRequest(req *InitRequest) (*InitResponse, error) {
+func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse, error) {
 	log.Lvl1("here", s.ServerIdentity().String())
-	s.Nodes.All = req.Nodes
-	s.Nodes.ServerIdentityToName = make(map[network.ServerIdentityID]string)
-	for k, v := range req.ServerIdentityToName {
-		s.Nodes.ServerIdentityToName[k.ID] = v
-	}
+	s.roster = req.SsRoster
+	memberNodes := s.roster.List
 
-	for _, node := range s.Nodes.All {
-		if node.Name != s.Nodes.GetServerIdentityToName(s.ServerIdentity()) {
-			e := s.SendRaw(node.ServerIdentity, &UnwitnessedMessage{step: 0, Id: s.Nodes.GetServerIdentityToName(s.ServerIdentity())})
-			if e != nil {
-				panic(e)
-			}
+	for _, node := range memberNodes {
+		fmt.Printf("Broadcast from %s \n", s.ServerIdentity().String())
+		e := s.SendRaw(node, &template.UnwitnessedMessage{Step: 0, Id: node})
+		if e != nil {
+			panic(e)
 		}
 	}
 
-	return &InitResponse{}, nil
+	return &template.InitResponse{}, nil
 }
 
 // Clock starts a template-protocol and returns the run-time.
@@ -165,18 +160,18 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 	s.RegisterProcessorFunc(unwitnessedMessageMsgID, func(arg1 *network.Envelope) error {
 		// Parse message
-		req, ok := arg1.Msg.(*UnwitnessedMessage)
+		req, ok := arg1.Msg.(*template.UnwitnessedMessage)
 		if !ok {
 			log.Error(s.ServerIdentity(), "failed to cast to unwitnessed message")
 			return nil
 		}
 
 		reply := "Test Message"
-		myName := s.Nodes.GetServerIdentityToName(s.ServerIdentity())
-		fmt.Print("Received step is %d from %s \n", req.step, req.Id)
+		myName := s.ServerIdentity()
+		fmt.Printf("Received step is %d from %s \n", req.Step, req.Id.String())
 		log.Lvl3("sending", reply)
-		requesterIdentity := s.Nodes.GetByName(req.Id).ServerIdentity
-		e := s.SendRaw(requesterIdentity, &AcknowledgementMessage{acknowledgement: reply, id: myName, unwitnessedMessage: *req})
+		requesterIdentity := req.Id
+		e := s.SendRaw(requesterIdentity, &template.AcknowledgementMessage{Id: myName, UnwitnessedMessage: *req})
 		if e != nil {
 			panic(e)
 		}

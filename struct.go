@@ -42,3 +42,27 @@ type Count struct {
 type CountReply struct {
 	Count int
 }
+
+type UnwitnessedMessage struct {
+	Step int
+	Id   *network.ServerIdentity
+}
+
+type WitnessedMessage struct {
+	step int
+	id   *network.ServerIdentity
+	//acknowledgeSet list.List how to define a list
+}
+
+type AcknowledgementMessage struct {
+	Id                 *network.ServerIdentity
+	UnwitnessedMessage UnwitnessedMessage
+}
+
+type InitRequest struct {
+	SsRoster *onet.Roster
+}
+
+// SignatureResponse is what the Cosi service will reply to clients.
+type InitResponse struct {
+}
