@@ -49,8 +49,8 @@ type UnwitnessedMessage struct {
 }
 
 type WitnessedMessage struct {
-	step int
-	id   *network.ServerIdentity
+	Step int
+	Id   *network.ServerIdentity
 	//acknowledgeSet list.List how to define a list
 }
 

@@ -44,23 +44,25 @@ type Service struct {
 	*onet.ServiceProcessor
 	roster  *onet.Roster
 	storage *storage
-	step int
+	step    int
 
-	sentUnwitnessMessages  map[int]*template.UnwitnessedMessage
+	majority int
 
-	recievedUnwitnessedMessages  map[int][]*template.UnwitnessedMessage
+	sentUnwitnessMessages map[int]*template.UnwitnessedMessage
 
-	sentAcknowledgementMessages  map[int][]*template.AcknowledgementMessage
+	recievedUnwitnessedMessages map[int][]*template.UnwitnessedMessage
 
-	recievedAcknowledgesMessages  map[int][]*template.AcknowledgementMessage
+	sentAcknowledgementMessages map[int][]*template.AcknowledgementMessage
 
-	sentThresholdWitnessedMessages  map[int]*template.WitnessedMessage
+	recievedAcknowledgesMessages map[int][]*template.AcknowledgementMessage
 
-	recievedThresholdwitnessedMessages  map[int][]*template.WitnessedMessage
+	sentThresholdWitnessedMessages map[int]*template.WitnessedMessage
 
-	recievedAcksBool  map[int]bool
+	recievedThresholdwitnessedMessages map[int][]*template.WitnessedMessage
 
-	recievedWitnessedMessagesBool  map[int]bool
+	recievedAcksBool map[int]bool
+
+	recievedWitnessedMessagesBool map[int]bool
 }
 
 // storageID reflects the data we're storing - we could store more
@@ -73,7 +75,7 @@ type storage struct {
 	sync.Mutex
 }
 
-func broadcastUnwitnessedMessage(memberNodes []*network.ServerIdentity, s *Service, message *template.UnwitnessedMessage){
+func broadcastUnwitnessedMessage(memberNodes []*network.ServerIdentity, s *Service, message *template.UnwitnessedMessage) {
 	for _, node := range memberNodes {
 		e := s.SendRaw(node, message)
 		if e != nil {
@@ -82,7 +84,7 @@ func broadcastUnwitnessedMessage(memberNodes []*network.ServerIdentity, s *Servi
 	}
 }
 
-func broadcastWitnessedMessage(memberNodes []*network.ServerIdentity, s *Service, message *template.WitnessedMessage){
+func broadcastWitnessedMessage(memberNodes []*network.ServerIdentity, s *Service, message *template.WitnessedMessage) {
 	for _, node := range memberNodes {
 		e := s.SendRaw(node, message)
 		if e != nil {
@@ -91,7 +93,7 @@ func broadcastWitnessedMessage(memberNodes []*network.ServerIdentity, s *Service
 	}
 }
 
-func unicastAcknowledgementMessage(memberNode *network.ServerIdentity, s *Service, message *template.AcknowledgementMessage){
+func unicastAcknowledgementMessage(memberNode *network.ServerIdentity, s *Service, message *template.AcknowledgementMessage) {
 	e := s.SendRaw(memberNode, message)
 	if e != nil {
 		panic(e)
@@ -103,10 +105,11 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 	log.Lvl1("here", s.ServerIdentity().String())
 	s.roster = req.SsRoster
 	memberNodes := s.roster.List
+	s.majority = len(memberNodes) / 2
 	fmt.Printf("Initial Broadcast from %s \n", s.ServerIdentity().String())
-	unwitnessedMessage := &template.UnwitnessedMessage{Step:s.step, Id:s.ServerIdentity()}
+	unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity()}
 	broadcastUnwitnessedMessage(memberNodes, s, unwitnessedMessage)
-	s.sentUnwitnessMessages[s.step]=unwitnessedMessage
+	s.sentUnwitnessMessages[s.step] = unwitnessedMessage
 	return &template.InitResponse{}, nil
 }
 
@@ -187,24 +190,23 @@ func (s *Service) tryLoad() error {
 func newService(c *onet.Context) (onet.Service, error) {
 	s := &Service{
 		ServiceProcessor: onet.NewServiceProcessor(c),
-		step: 0,
+		step:             0,
 
 		sentUnwitnessMessages: make(map[int]*template.UnwitnessedMessage),
 
-		recievedUnwitnessedMessages:  make(map[int][]*template.UnwitnessedMessage),
+		recievedUnwitnessedMessages: make(map[int][]*template.UnwitnessedMessage),
 
-		sentAcknowledgementMessages:  make(map[int][]*template.AcknowledgementMessage),
+		sentAcknowledgementMessages: make(map[int][]*template.AcknowledgementMessage),
 
-		recievedAcknowledgesMessages:  make(map[int][]*template.AcknowledgementMessage),
+		recievedAcknowledgesMessages: make(map[int][]*template.AcknowledgementMessage),
 
-		sentThresholdWitnessedMessages:  make(map[int]*template.WitnessedMessage),
+		sentThresholdWitnessedMessages: make(map[int]*template.WitnessedMessage),
 
-		recievedThresholdwitnessedMessages:  make(map[int][]*template.WitnessedMessage),
+		recievedThresholdwitnessedMessages: make(map[int][]*template.WitnessedMessage),
 
-		recievedAcksBool:  make(map[int]bool),
+		recievedAcksBool: make(map[int]bool),
 
-		recievedWitnessedMessagesBool:  make(map[int]bool),
-
+		recievedWitnessedMessagesBool: make(map[int]bool),
 	}
 	if err := s.RegisterHandlers(s.Clock, s.Count, s.InitRequest); err != nil {
 		return nil, errors.New("Couldn't register messages")
@@ -223,13 +225,6 @@ func newService(c *onet.Context) (onet.Service, error) {
 		}
 		fmt.Printf("Received step is %d from %s by %s \n", req.Step, req.Id.String(), s.ServerIdentity())
 
-		/*
-		recievedUnwitnessedMessages[(UnwitnessedMessage)rawMessage.step].append( rawMessage)
-		newAck = AcknowledgementMessage{“Ack”, Pi.id, (UnwitnessedMessage)rawMessage}
-		sentAcknowledgementMessages[(UnwitnessedMessage)rawMessage.step].append(newAck)
-		unicast(newAck,(UnwitnessedMessage)rawMessage.id)//send ack to the sender of unwitnessed message
-
-		*/
 		s.recievedUnwitnessedMessages[req.Step] = append(s.recievedUnwitnessedMessages[req.Step], req)
 		newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: req}
 		requesterIdentity := req.Id
@@ -247,36 +242,17 @@ func newService(c *onet.Context) (onet.Service, error) {
 		}
 		fmt.Printf("Received acknowledgement from %s by %s \n", req.Id.String(), s.ServerIdentity())
 
-		/*
-			recievedAcknowledgesMessages[(AcknowledgementMessage)rawMessage.UnwitnessedMessage.step].append(rawMessage)
-			//if Pi has received enough acks to send a witnessed message, mark that and do so
-			If (!recievedAcksBool[Pi.step]){
-				if(count(recievedAcknowledgesMessages[Pi.step])> MAJORITY){
-			recievedAcksBool[Pi.step] = true
-			newWitness = WitnessedMessage{pi.step, pi.id, recievedAcknowledgesMessages[Pi.step]}
-			sentThresholdWitnessedMessages[Pi.step] = newWitness
-			Broadcast(newWitness)
-		}
-		}
+		s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step] = append(s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step], req)
 
-
-		*/
-		s.sentAcknowledgementMessages[req.UnwitnessedMessage.Step] = append(s.sentAcknowledgementMessages[req.UnwitnessedMessage.Step], req)
-
-		if(!s.recievedAcksBool[s.step])
-		{
-			if (count(recievedAcknowledgesMessages[Pi.step]) > MAJORITY) {
-				recievedAcksBool[Pi.step] = true
-				newWitness = WitnessedMessage{pi.step, pi.id, recievedAcknowledgesMessages[Pi.step]}
-				sentThresholdWitnessedMessages[Pi.step] = newWitness
-				Broadcast(newWitness)
-
+		if !s.recievedAcksBool[s.step] {
+			if len(s.recievedAcknowledgesMessages[s.step]) >= s.majority {
+				s.recievedAcksBool[s.step] = true
+				newWitness := &template.WitnessedMessage{Step: s.step, Id: s.ServerIdentity()}
+				broadcastWitnessedMessage(s.roster.List, s, newWitness)
+				s.sentThresholdWitnessedMessages[s.step] = newWitness
 			}
 		}
-		newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: req}
-		requesterIdentity := req.Id
-		unicastAcknowledgementMessage(requesterIdentity, s, newAck)
-		s.sentAcknowledgementMessages[req.Step] = append(s.sentAcknowledgementMessages[req.Step], newAck)
+
 		return nil
 	})
 
