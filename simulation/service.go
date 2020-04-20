@@ -1,13 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"github.com/BurntSushi/toml"
 	"github.com/dedis/cothority_template"
 	"github.com/dedis/cothority_template/service"
 	"go.dedis.ch/onet/v3"
 	"go.dedis.ch/onet/v3/log"
-	"go.dedis.ch/onet/v3/simul/monitor"
+	"time"
 )
 
 /*
@@ -57,7 +56,7 @@ func (s *SimulationService) Node(config *onet.SimulationConfig) error {
 	}
 	log.Lvl3("Initializing node-index", index)
 	myService := config.GetService(template.ServiceName).(*service.Service)
-	fmt.Printf("----------------Invoking the InitRequest-------------------- \n")
+	//fmt.Printf("----------------Invoking the InitRequest-------------------- \n")
 	serviceReq := &template.InitRequest{
 		SsRoster: config.Roster,
 	}
@@ -74,16 +73,17 @@ func (s *SimulationService) Node(config *onet.SimulationConfig) error {
 func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 	size := config.Tree.Size()
 	log.Lvl2("Size is:", size, "rounds:", s.Rounds)
-	c := template.NewClient()
-	for round := 0; round < 1; round++ {
-		log.Lvl1("Starting round", round)
-		round := monitor.NewTimeMeasure("round")
-		resp, err := c.Clock(config.Roster)
-		log.ErrFatal(err)
-		if resp.Time <= 0 {
-			log.Fatal("0 time elapsed")
-		}
-		round.Record()
-	}
+	//c := template.NewClient()
+	//for round := 0; round < 1; round++ {
+	//	log.Lvl1("Starting round", round)
+	//	round := monitor.NewTimeMeasure("round")
+	//	resp, err := c.Clock(config.Roster)
+	//	log.ErrFatal(err)
+	//	if resp.Time <= 0 {
+	//		log.Fatal("0 time elapsed")
+	//	}
+	//	round.Record()
+	//}
+	time.Sleep(100 * time.Second)
 	return nil
 }

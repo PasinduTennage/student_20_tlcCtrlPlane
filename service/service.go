@@ -246,7 +246,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		if !s.recievedAcksBool[s.step] {
 			if len(s.recievedAcknowledgesMessages[s.step]) >= s.majority {
-				fmt.Printf("%s Recieved a majority of Acks \n", s.ServerIdentity())
+				//fmt.Printf("%s Recieved a majority of Acks \n", s.ServerIdentity())
 				s.recievedAcksBool[s.step] = true
 				newWitness := &template.WitnessedMessage{Step: s.step, Id: s.ServerIdentity()}
 				broadcastWitnessedMessage(s.roster.List, s, newWitness)
@@ -270,9 +270,9 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		if !s.recievedWitnessedMessagesBool[s.step] {
 			if len(s.recievedThresholdwitnessedMessages[s.step]) >= s.majority {
-				fmt.Printf("%s updates its step \n", s.ServerIdentity())
 				s.recievedWitnessedMessagesBool[s.step] = true
 				s.step = s.step + 1
+				fmt.Printf("%s's time step is %d \n", s.ServerIdentity(), s.step)
 				unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity()}
 				broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
 				s.sentUnwitnessMessages[s.step] = unwitnessedMessage
