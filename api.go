@@ -55,3 +55,14 @@ func (c *Client) Count(si *network.ServerIdentity) (int, error) {
 	}
 	return reply.Count, nil
 }
+
+//// InitRequest will return the number of times `Clock` has been called on this
+//// service-node.
+//func (c *Client) Count(si *network.ServerIdentity) (int, error) {
+//	reply := &CountReply{}
+//	err := c.SendProtobuf(si, &Count{}, reply)
+//	if err != nil {
+//		return -1, err
+//	}
+//	return reply.Count, nil
+//}

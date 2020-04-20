@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-var Name = "TemplateService"
+//var Name = template.ServiceName
 
 var unwitnessedMessageMsgID network.MessageTypeID
 var witnessedMessageMsgID network.MessageTypeID
