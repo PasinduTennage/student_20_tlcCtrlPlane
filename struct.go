@@ -56,7 +56,7 @@ type WitnessedMessage struct {
 
 type AcknowledgementMessage struct {
 	Id                 *network.ServerIdentity
-	UnwitnessedMessage UnwitnessedMessage
+	UnwitnessedMessage *UnwitnessedMessage
 }
 
 type InitRequest struct {
