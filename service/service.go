@@ -223,7 +223,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 			log.Error(s.ServerIdentity(), "failed to cast to unwitnessed message")
 			return nil
 		}
-		fmt.Printf("Received step is %d from %s by %s \n", req.Step, req.Id.String(), s.ServerIdentity())
+		//fmt.Printf("Received step is %d from %s by %s \n", req.Step, req.Id.String(), s.ServerIdentity())
 
 		s.recievedUnwitnessedMessages[req.Step] = append(s.recievedUnwitnessedMessages[req.Step], req)
 		newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: req}
@@ -240,12 +240,13 @@ func newService(c *onet.Context) (onet.Service, error) {
 			log.Error(s.ServerIdentity(), "failed to cast to acknowledgement message")
 			return nil
 		}
-		fmt.Printf("Received acknowledgement from %s by %s \n", req.Id.String(), s.ServerIdentity())
+		//fmt.Printf("Received acknowledgement from %s by %s \n", req.Id.String(), s.ServerIdentity())
 
 		s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step] = append(s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step], req)
 
 		if !s.recievedAcksBool[s.step] {
 			if len(s.recievedAcknowledgesMessages[s.step]) >= s.majority {
+				fmt.Printf("%s Recieved a majority of Acks \n", s.ServerIdentity())
 				s.recievedAcksBool[s.step] = true
 				newWitness := &template.WitnessedMessage{Step: s.step, Id: s.ServerIdentity()}
 				broadcastWitnessedMessage(s.roster.List, s, newWitness)
@@ -253,6 +254,30 @@ func newService(c *onet.Context) (onet.Service, error) {
 			}
 		}
 
+		return nil
+	})
+
+	s.RegisterProcessorFunc(witnessedMessageMsgID, func(arg1 *network.Envelope) error {
+		// Parse message
+		req, ok := arg1.Msg.(*template.WitnessedMessage)
+		if !ok {
+			log.Error(s.ServerIdentity(), "failed to cast to witnessed message")
+			return nil
+		}
+		//fmt.Printf("Received threshold witnessed message from %s by %s \n", req.Id.String(), s.ServerIdentity())
+
+		s.recievedThresholdwitnessedMessages[req.Step] = append(s.recievedThresholdwitnessedMessages[req.Step], req)
+
+		if !s.recievedWitnessedMessagesBool[s.step] {
+			if len(s.recievedThresholdwitnessedMessages[s.step]) >= s.majority {
+				fmt.Printf("%s updates its step \n", s.ServerIdentity())
+				s.recievedWitnessedMessagesBool[s.step] = true
+				s.step = s.step + 1
+				unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity()}
+				broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
+				s.sentUnwitnessMessages[s.step] = unwitnessedMessage
+			}
+		}
 		return nil
 	})
 
