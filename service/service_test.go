@@ -72,5 +72,5 @@ func TestService_Init(t *testing.T) {
 		s.(*Service).InitRequest(
 			&template.InitRequest{SsRoster: roster})
 	}
-	time.Sleep(10000 * time.Millisecond)
+	time.Sleep(100 * time.Second)
 }
