@@ -114,20 +114,20 @@ func unicastAcknowledgementMessage(memberNode *network.ServerIdentity, s *Servic
 func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse, error) {
 	log.Lvl1("here", s.ServerIdentity().String())
 	s.roster = req.SsRoster
-	fmt.Printf("Roster is set for %s", s.ServerIdentity())
+	//fmt.Printf("Roster is set for %s", s.ServerIdentity())
 
 	memberNodes := s.roster.List
 
 	s.majority = len(memberNodes) / 2
 
 	//time.Sleep(10 * time.Second)
-	fmt.Printf("Initial Broadcast from %s \n", s.ServerIdentity().String())
+	//fmt.Printf("Initial Broadcast from %s \n", s.ServerIdentity().String())
 
 	unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity()}
 	broadcastUnwitnessedMessage(memberNodes, s, unwitnessedMessage)
 
 	s.sentUnwitnessMessagesLock.Lock()
-	s.sentUnwitnessMessages[s.step] = unwitnessedMessage
+	s.sentUnwitnessMessages[s.step] = unwitnessedMessage // check syncMaps in go
 	s.sentUnwitnessMessagesLock.Unlock()
 	return &template.InitResponse{}, nil
 }
@@ -246,6 +246,10 @@ func newService(c *onet.Context) (onet.Service, error) {
 	}
 
 	s.RegisterProcessorFunc(unwitnessedMessageMsgID, func(arg1 *network.Envelope) error {
+
+		//r := rand.Intn(10000000)
+		//time.Sleep(time.Duration(r) * time.Microsecond)
+
 		// Parse message
 		req, ok := arg1.Msg.(*template.UnwitnessedMessage)
 		if !ok {
@@ -269,13 +273,17 @@ func newService(c *onet.Context) (onet.Service, error) {
 	})
 
 	s.RegisterProcessorFunc(acknowledgementMessageMsgID, func(arg1 *network.Envelope) error {
+
+		//r := rand.Intn(10000000)
+		//time.Sleep(time.Duration(r) * time.Microsecond)
+
 		// Parse message
 		req, ok := arg1.Msg.(*template.AcknowledgementMessage)
 		if !ok {
 			log.Error(s.ServerIdentity(), "failed to cast to acknowledgement message")
 			return nil
 		}
-		//fmt.Printf("Received acknowledgement from %s by %s \n", req.Id.String(), s.ServerIdentity())
+		// //fmt.Printf("Received acknowledgement from %s by %s \n", req.Id.String(), s.ServerIdentity())
 
 		s.recievedAcknowledgesMessagesLock.Lock()
 		s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step] = append(s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step], req)
@@ -311,6 +319,10 @@ func newService(c *onet.Context) (onet.Service, error) {
 	})
 
 	s.RegisterProcessorFunc(witnessedMessageMsgID, func(arg1 *network.Envelope) error {
+
+		//r := rand.Intn(10000000)
+		//time.Sleep(time.Duration(r) * time.Microsecond)
+
 		// Parse message
 		req, ok := arg1.Msg.(*template.WitnessedMessage)
 		if !ok {
@@ -319,7 +331,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 		}
 		//fmt.Printf("Received threshold witnessed message from %s by %s \n", req.Id.String(), s.ServerIdentity())
 
-		s.recievedThresholdwitnessedMessagesLock.Lock()
+		s.recievedThresholdwitnessedMessagesLock.Lock() //receive
 		s.recievedThresholdwitnessedMessages[req.Step] = append(s.recievedThresholdwitnessedMessages[req.Step], req)
 		s.recievedThresholdwitnessedMessagesLock.Unlock()
 
