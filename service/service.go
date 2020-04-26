@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/onet/v3"
 	"go.dedis.ch/onet/v3/log"
 	"go.dedis.ch/onet/v3/network"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -113,6 +114,9 @@ func unicastAcknowledgementMessage(memberNode *network.ServerIdentity, s *Servic
 
 func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse, error) {
 	log.Lvl1("here", s.ServerIdentity().String())
+
+	rand.Seed(time.Now().UTC().UnixNano())
+
 	s.roster = req.SsRoster
 	//fmt.Printf("Roster is set for %s", s.ServerIdentity())
 
@@ -254,6 +258,12 @@ func newService(c *onet.Context) (onet.Service, error) {
 		//r := rand.Intn(10000000)
 		//time.Sleep(time.Duration(r) * time.Microsecond)
 
+		//r := rand.Intn(1000)
+		//if r % 97 == 0 {
+		//	fmt.Printf("Process %s decided to drop an unwitnessed message \n")
+		//	return nil
+		//}
+
 		// Parse message
 		req, ok := arg1.Msg.(*template.UnwitnessedMessage)
 		if !ok {
@@ -286,6 +296,12 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 	s.RegisterProcessorFunc(acknowledgementMessageMsgID, func(arg1 *network.Envelope) error {
 
+
+		//r := rand.Intn(1000)
+		//if r % 97 == 0 {
+		//	fmt.Printf("Process %s decided to drop an acknowledge message \n")
+		//	return nil
+		//}
 		//r := rand.Intn(10000000)
 		//time.Sleep(time.Duration(r) * time.Microsecond)
 
@@ -337,6 +353,12 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 	s.RegisterProcessorFunc(witnessedMessageMsgID, func(arg1 *network.Envelope) error {
 
+
+		//r := rand.Intn(1000)
+		//if r % 97 ==0 {
+		//	fmt.Printf("Process %s decided to drop an witnessed message \n")
+		//	return nil
+		//}
 		//r := rand.Intn(10000000)
 		//time.Sleep(time.Duration(r) * time.Microsecond)
 
