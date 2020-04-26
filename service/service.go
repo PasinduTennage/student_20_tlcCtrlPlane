@@ -123,11 +123,15 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 	//time.Sleep(10 * time.Second)
 	//fmt.Printf("Initial Broadcast from %s \n", s.ServerIdentity().String())
 
-	unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity()}
+	s.stepLock.Lock()
+	stepNow:= s.step
+	s.stepLock.Unlock()
+
+	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity()}
 	broadcastUnwitnessedMessage(memberNodes, s, unwitnessedMessage)
 
 	s.sentUnwitnessMessagesLock.Lock()
-	s.sentUnwitnessMessages[s.step] = unwitnessedMessage // check syncMaps in go
+	s.sentUnwitnessMessages[stepNow] = unwitnessedMessage // check syncMaps in go
 	s.sentUnwitnessMessagesLock.Unlock()
 	return &template.InitResponse{}, nil
 }
@@ -289,28 +293,33 @@ func newService(c *onet.Context) (onet.Service, error) {
 		s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step] = append(s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step], req)
 		s.recievedAcknowledgesMessagesLock.Unlock()
 
+		s.stepLock.Lock()
+		stepNow:= s.step
+		s.stepLock.Unlock()
+
+
 		s.recievedAcksBoolLock.Lock()
-		hasEnoughAcks := s.recievedAcksBool[s.step]
+		hasEnoughAcks := s.recievedAcksBool[stepNow]
 		s.recievedAcksBoolLock.Unlock()
 
 		if !hasEnoughAcks {
 
 			s.recievedAcknowledgesMessagesLock.Lock()
-			lenRecievedAcks := len(s.recievedAcknowledgesMessages[s.step])
+			lenRecievedAcks := len(s.recievedAcknowledgesMessages[stepNow])
 			s.recievedAcknowledgesMessagesLock.Unlock()
 
 			if lenRecievedAcks >= s.majority {
 				//fmt.Printf("%s Recieved a majority of Acks \n", s.ServerIdentity())
 
 				s.recievedAcksBoolLock.Lock()
-				s.recievedAcksBool[s.step] = true
+				s.recievedAcksBool[stepNow] = true
 				s.recievedAcksBoolLock.Unlock()
 
-				newWitness := &template.WitnessedMessage{Step: s.step, Id: s.ServerIdentity()}
+				newWitness := &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity()}
 				broadcastWitnessedMessage(s.roster.List, s, newWitness)
 
 				s.sentThresholdWitnessedMessagesLock.Lock()
-				s.sentThresholdWitnessedMessages[s.step] = newWitness
+				s.sentThresholdWitnessedMessages[stepNow] = newWitness
 				s.sentThresholdWitnessedMessagesLock.Unlock()
 			}
 		}
@@ -331,42 +340,46 @@ func newService(c *onet.Context) (onet.Service, error) {
 		}
 		//fmt.Printf("Received threshold witnessed message from %s by %s \n", req.Id.String(), s.ServerIdentity())
 
+		s.stepLock.Lock()
+		stepNow:= s.step
+		s.stepLock.Unlock()
+
+
 		s.recievedThresholdwitnessedMessagesLock.Lock() //receive
 		s.recievedThresholdwitnessedMessages[req.Step] = append(s.recievedThresholdwitnessedMessages[req.Step], req)
 		s.recievedThresholdwitnessedMessagesLock.Unlock()
 
 		s.recievedWitnessedMessagesBoolLock.Lock()
-		hasRecievedWitnessedMessages := s.recievedWitnessedMessagesBool[s.step]
+		hasRecievedWitnessedMessages := s.recievedWitnessedMessagesBool[stepNow]
 		s.recievedWitnessedMessagesBoolLock.Unlock()
+
+
 
 		if !hasRecievedWitnessedMessages {
 
 			s.recievedThresholdwitnessedMessagesLock.Lock()
-			lenThresholdWitnessedMessages := len(s.recievedThresholdwitnessedMessages[s.step])
+			lenThresholdWitnessedMessages := len(s.recievedThresholdwitnessedMessages[stepNow])
 			s.recievedThresholdwitnessedMessagesLock.Unlock()
 
 			if lenThresholdWitnessedMessages >= s.majority {
 
 				s.recievedWitnessedMessagesBoolLock.Lock()
-				s.recievedWitnessedMessagesBool[s.step] = true
+				s.recievedWitnessedMessagesBool[stepNow] = true
 				s.recievedWitnessedMessagesBoolLock.Unlock()
 
 				s.stepLock.Lock()
 				s.step = s.step + 1
+				stepNow = s.step
 				s.stepLock.Unlock()
 
-				fmt.Printf("%s's time step is %d \n", s.ServerIdentity(), s.step)
+				fmt.Printf("%s's time step is %d \n", s.ServerIdentity(), stepNow)
 
-				unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity()}
+				unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity()}
 
 				if s.roster == nil {
 					fmt.Printf("%s's roster is nil \n", s.ServerIdentity())
 					return nil
 				}
-
-				s.stepLock.Lock()
-				stepNow := s.step
-				s.stepLock.Unlock()
 
 				if stepNow > 1000 {
 					return nil
@@ -375,7 +388,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 				broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
 
 				s.sentUnwitnessMessagesLock.Lock()
-				s.sentUnwitnessMessages[s.step] = unwitnessedMessage
+				s.sentUnwitnessMessages[stepNow] = unwitnessedMessage
 				s.sentUnwitnessMessagesLock.Unlock()
 			}
 		}
