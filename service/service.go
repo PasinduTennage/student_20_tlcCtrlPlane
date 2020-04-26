@@ -262,18 +262,26 @@ func newService(c *onet.Context) (onet.Service, error) {
 		}
 		//fmt.Printf("Received step is %d from %s by %s \n", req.Step, req.Id.String(), s.ServerIdentity())
 
-		s.recievedUnwitnessedMessagesLock.Lock()
-		s.recievedUnwitnessedMessages[req.Step] = append(s.recievedUnwitnessedMessages[req.Step], req)
-		s.recievedUnwitnessedMessagesLock.Unlock()
+		s.stepLock.Lock()
+		stepNow:= s.step
+		s.stepLock.Unlock()
 
-		newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: req}
-		requesterIdentity := req.Id
-		unicastAcknowledgementMessage(requesterIdentity, s, newAck)
+		if req.Step <= stepNow {
 
-		s.sentAcknowledgementMessagesLock.Lock()
-		s.sentAcknowledgementMessages[req.Step] = append(s.sentAcknowledgementMessages[req.Step], newAck)
-		s.sentAcknowledgementMessagesLock.Unlock()
+			s.recievedUnwitnessedMessagesLock.Lock()
+			s.recievedUnwitnessedMessages[req.Step] = append(s.recievedUnwitnessedMessages[req.Step], req)
+			s.recievedUnwitnessedMessagesLock.Unlock()
+
+			newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: req}
+			requesterIdentity := req.Id
+			unicastAcknowledgementMessage(requesterIdentity, s, newAck)
+
+			s.sentAcknowledgementMessagesLock.Lock()
+			s.sentAcknowledgementMessages[req.Step] = append(s.sentAcknowledgementMessages[req.Step], newAck)
+			s.sentAcknowledgementMessagesLock.Unlock()
+		}
 		return nil
+
 	})
 
 	s.RegisterProcessorFunc(acknowledgementMessageMsgID, func(arg1 *network.Envelope) error {
