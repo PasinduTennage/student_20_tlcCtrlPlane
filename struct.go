@@ -66,3 +66,13 @@ type InitRequest struct {
 // SignatureResponse is what the Cosi service will reply to clients.
 type InitResponse struct {
 }
+
+type CatchUpMessage struct {
+	Id                                 *network.ServerIdentity
+	Step                               int
+	RecievedThresholdwitnessedMessages map[int]*ArrayWitnessedMessages
+}
+
+type ArrayWitnessedMessages struct {
+	Messages              []*WitnessedMessage
+}
