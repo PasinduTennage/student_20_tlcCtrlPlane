@@ -52,6 +52,8 @@ type Service struct {
 
 	majority int
 
+	maxTime int
+
 	sentUnwitnessMessages     map[int]*template.UnwitnessedMessage
 	sentUnwitnessMessagesLock *sync.Mutex
 
@@ -135,6 +137,8 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 	memberNodes := s.roster.List
 
 	s.majority = len(memberNodes)/2 + 1
+
+	s.maxTime = 5000
 
 	//time.Sleep(10 * time.Second)
 	//fmt.Printf("Initial Broadcast from %s \n", s.ServerIdentity().String())
@@ -298,7 +302,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 		s.recievedThresholdwitnessedMessagesLock.Lock()
 		s.recievedTempUnwitnessedMessagesLock.Lock()
 
-		fmt.Printf("%s at %d received unwitnessed from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
+		//fmt.Printf("%s at %d received unwitnessed from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
 
 		stepNow := s.step
 
@@ -309,7 +313,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 			requesterIdentity := req.Id
 			unicastAcknowledgementMessage(requesterIdentity, s, newAck)
 			s.sentAcknowledgementMessages[req.Step] = append(s.sentAcknowledgementMessages[req.Step], newAck)
-			fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, req.Id, newAck.UnwitnessedMessage.Step)
+			//fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, req.Id, newAck.UnwitnessedMessage.Step)
 
 		} else if req.Step < stepNow {
 
@@ -318,7 +322,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 			requesterIdentity := req.Id
 			unicastAcknowledgementMessage(requesterIdentity, s, newAck)
 			s.sentAcknowledgementMessages[req.Step] = append(s.sentAcknowledgementMessages[req.Step], newAck)
-			fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, req.Id, newAck.UnwitnessedMessage.Step)
+			//fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, req.Id, newAck.UnwitnessedMessage.Step)
 
 			catchUpThresholdwitnessedMessages := make(map[int]*template.ArrayWitnessedMessages)
 			for i := req.Step; i < stepNow; i++ {
@@ -330,7 +334,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 			newCatchUpMessage := &template.CatchUpMessage{Id: s.ServerIdentity(), Step: stepNow, RecievedThresholdwitnessedMessages: catchUpThresholdwitnessedMessages}
 			unicastCatchUpMessage(req.Id, s, newCatchUpMessage)
-			fmt.Printf("%s at %d sent catchup to %s with step %d \n", s.ServerIdentity(), s.step, req.Id, stepNow)
+			//fmt.Printf("%s at %d sent catchup to %s with step %d \n", s.ServerIdentity(), s.step, req.Id, stepNow)
 
 		} else if req.Step > stepNow {
 			// save the unwitnessed message and later send ack
@@ -374,7 +378,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 		s.recievedAcksBoolLock.Lock()
 		s.sentThresholdWitnessedMessagesLock.Lock()
 
-		fmt.Printf("%s at %d received ack from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.UnwitnessedMessage.Step)
+		//fmt.Printf("%s at %d received ack from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.UnwitnessedMessage.Step)
 
 		s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step] = append(s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step], req)
 		stepNow := s.step
@@ -407,7 +411,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 					newWitness := &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity()}
 					broadcastWitnessedMessage(s.roster.List, s, newWitness)
 					s.sentThresholdWitnessedMessages[stepNow] = newWitness
-					fmt.Printf("%s at %d broadcast witnessed with step %d \n", s.ServerIdentity(), s.step, newWitness.Step)
+					//fmt.Printf("%s at %d broadcast witnessed with step %d \n", s.ServerIdentity(), s.step, newWitness.Step)
 				}
 
 			}
@@ -447,7 +451,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 		s.recievedWitnessedMessagesBoolLock.Lock()
 		s.recievedTempUnwitnessedMessagesLock.Lock()
 
-		fmt.Printf("%s at %d received witnessed from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
+		//fmt.Printf("%s at %d received witnessed from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
 
 		stepNow := s.step
 		s.recievedThresholdwitnessedMessages[req.Step] = append(s.recievedThresholdwitnessedMessages[req.Step], req)
@@ -481,7 +485,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 					s.step = s.step + 1
 					stepNow = s.step
 
-					fmt.Printf("%s increased time step to %d \n", s.ServerIdentity(), stepNow)
+					//fmt.Printf("%s increased time step to %d \n", s.ServerIdentity(), stepNow)
 
 					unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity()}
 
@@ -490,7 +494,8 @@ func newService(c *onet.Context) (onet.Service, error) {
 						return nil
 					}
 
-					if stepNow > 1000 {
+					if stepNow > s.maxTime {
+						fmt.Printf("%s time step is %d \n", s.ServerIdentity(), stepNow)
 						return nil
 					}
 
@@ -499,7 +504,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 					if !ok {
 						broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
 						s.sentUnwitnessMessages[stepNow] = unwitnessedMessage
-						fmt.Printf("%s at %d broadcast unwitnessed with step %d \n", s.ServerIdentity(), s.step, s.step)
+						//fmt.Printf("%s at %d broadcast unwitnessed with step %d \n", s.ServerIdentity(), s.step, s.step)
 					} else {
 						fmt.Printf("Unwitnessed message %s for step %d from %s is already sent; possible race condition \n", value, stepNow, s.ServerIdentity())
 					}
@@ -512,7 +517,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 						requesterIdentity := uauwm.Id
 						unicastAcknowledgementMessage(requesterIdentity, s, newAck)
 						s.sentAcknowledgementMessages[uauwm.Step] = append(s.sentAcknowledgementMessages[uauwm.Step], newAck)
-						fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, requesterIdentity, newAck.UnwitnessedMessage.Step)
+						//fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, requesterIdentity, newAck.UnwitnessedMessage.Step)
 					}
 
 				}
@@ -555,7 +560,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 		s.recievedWitnessedMessagesBoolLock.Lock()
 		s.recievedTempUnwitnessedMessagesLock.Lock()
 
-		fmt.Printf("%s at %d received catchup from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
+		//fmt.Printf("%s at %d received catchup from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
 
 		stepNow := s.step
 
@@ -575,7 +580,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 					requesterIdentity := uauwm.Id
 					unicastAcknowledgementMessage(requesterIdentity, s, newAck)
 					s.sentAcknowledgementMessages[uauwm.Step] = append(s.sentAcknowledgementMessages[uauwm.Step], newAck)
-					fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, requesterIdentity, newAck.UnwitnessedMessage.Step)
+					//fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, requesterIdentity, newAck.UnwitnessedMessage.Step)
 				}
 			}
 
@@ -591,7 +596,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 				return nil
 			}
 
-			if stepNow > 1000 {
+			if stepNow > s.maxTime {
 				return nil
 			}
 
@@ -600,7 +605,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 			if !ok {
 				broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
 				s.sentUnwitnessMessages[stepNow] = unwitnessedMessage
-				fmt.Printf("%s at %d broadcast unwitnessed with step %d \n", s.ServerIdentity(), s.step, s.step)
+				//fmt.Printf("%s at %d broadcast unwitnessed with step %d \n", s.ServerIdentity(), s.step, s.step)
 			} else {
 				fmt.Printf("Unwitnessed message %s for step %d from %s is already sent; possible race condition \n", value, stepNow, s.ServerIdentity())
 			}
