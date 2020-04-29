@@ -58,6 +58,9 @@ type Service struct {
 	recievedUnwitnessedMessages     map[int][]*template.UnwitnessedMessage
 	recievedUnwitnessedMessagesLock *sync.Mutex
 
+	recievedTempUnwitnessedMessages     map[int][]*template.UnwitnessedMessage
+	recievedTempUnwitnessedMessagesLock *sync.Mutex
+
 	sentAcknowledgementMessages     map[int][]*template.AcknowledgementMessage
 	sentAcknowledgementMessagesLock *sync.Mutex
 
@@ -239,6 +242,9 @@ func newService(c *onet.Context) (onet.Service, error) {
 		recievedUnwitnessedMessages:     make(map[int][]*template.UnwitnessedMessage),
 		recievedUnwitnessedMessagesLock: new(sync.Mutex),
 
+		recievedTempUnwitnessedMessages:     make(map[int][]*template.UnwitnessedMessage),
+		recievedTempUnwitnessedMessagesLock: new(sync.Mutex),
+
 		sentAcknowledgementMessages:     make(map[int][]*template.AcknowledgementMessage),
 		sentAcknowledgementMessagesLock: new(sync.Mutex),
 
@@ -290,6 +296,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 		s.recievedUnwitnessedMessagesLock.Lock()
 		s.sentAcknowledgementMessagesLock.Lock()
 		s.recievedThresholdwitnessedMessagesLock.Lock()
+		s.recievedTempUnwitnessedMessagesLock.Lock()
 
 		fmt.Printf("%s at %d received unwitnessed from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
 
@@ -306,8 +313,13 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		} else if req.Step < stepNow {
 
-			//fmt.Printf("Sending a catch up message because %s's time step which is %d is greater than %s's time step which is %d \n", s.ServerIdentity(), stepNow, req.Id, req.Step)
-			// send a catch up message
+			s.recievedUnwitnessedMessages[req.Step] = append(s.recievedUnwitnessedMessages[req.Step], req)
+			newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: req}
+			requesterIdentity := req.Id
+			unicastAcknowledgementMessage(requesterIdentity, s, newAck)
+			s.sentAcknowledgementMessages[req.Step] = append(s.sentAcknowledgementMessages[req.Step], newAck)
+			fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, req.Id, newAck.UnwitnessedMessage.Step)
+
 			catchUpThresholdwitnessedMessages := make(map[int]*template.ArrayWitnessedMessages)
 			for i := req.Step; i < stepNow; i++ {
 
@@ -319,8 +331,13 @@ func newService(c *onet.Context) (onet.Service, error) {
 			newCatchUpMessage := &template.CatchUpMessage{Id: s.ServerIdentity(), Step: stepNow, RecievedThresholdwitnessedMessages: catchUpThresholdwitnessedMessages}
 			unicastCatchUpMessage(req.Id, s, newCatchUpMessage)
 			fmt.Printf("%s at %d sent catchup to %s with step %d \n", s.ServerIdentity(), s.step, req.Id, stepNow)
+
+		} else if req.Step > stepNow {
+			// save the unwitnessed message and later send ack
+			s.recievedTempUnwitnessedMessages[req.Step] = append(s.recievedTempUnwitnessedMessages[req.Step], req)
 		}
 
+		s.recievedTempUnwitnessedMessagesLock.Unlock()
 		s.recievedThresholdwitnessedMessagesLock.Unlock()
 		s.sentAcknowledgementMessagesLock.Unlock()
 		s.recievedUnwitnessedMessagesLock.Unlock()
@@ -428,6 +445,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 		s.sentUnwitnessMessagesLock.Lock()
 		s.recievedThresholdwitnessedMessagesLock.Lock()
 		s.recievedWitnessedMessagesBoolLock.Lock()
+		s.recievedTempUnwitnessedMessagesLock.Lock()
 
 		fmt.Printf("%s at %d received witnessed from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
 
@@ -485,11 +503,24 @@ func newService(c *onet.Context) (onet.Service, error) {
 					} else {
 						fmt.Printf("Unwitnessed message %s for step %d from %s is already sent; possible race condition \n", value, stepNow, s.ServerIdentity())
 					}
+
+					// check if there are unwitnessed messages to which this process didn't send and ack previously
+					unAckedUnwitnessedMessages:= s.recievedTempUnwitnessedMessages[stepNow]
+					for _, uauwm := range unAckedUnwitnessedMessages {
+						s.recievedUnwitnessedMessages[uauwm.Step] = append(s.recievedUnwitnessedMessages[uauwm.Step], uauwm)
+						newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: uauwm}
+						requesterIdentity := uauwm.Id
+						unicastAcknowledgementMessage(requesterIdentity, s, newAck)
+						s.sentAcknowledgementMessages[uauwm.Step] = append(s.sentAcknowledgementMessages[uauwm.Step], newAck)
+						fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, requesterIdentity, newAck.UnwitnessedMessage.Step)
+					}
+
 				}
 
 			}
 
 		}
+		s.recievedTempUnwitnessedMessagesLock.Unlock()
 		s.recievedWitnessedMessagesBoolLock.Unlock()
 		s.recievedThresholdwitnessedMessagesLock.Unlock()
 		s.sentUnwitnessMessagesLock.Unlock()
@@ -522,6 +553,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 		s.sentUnwitnessMessagesLock.Lock()
 		s.recievedThresholdwitnessedMessagesLock.Lock()
 		s.recievedWitnessedMessagesBoolLock.Lock()
+		s.recievedTempUnwitnessedMessagesLock.Lock()
 
 		fmt.Printf("%s at %d received catchup from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
 
@@ -533,6 +565,18 @@ func newService(c *onet.Context) (onet.Service, error) {
 			for i := stepNow; i < req.Step; i++ {
 				s.recievedThresholdwitnessedMessages[i] = catchUpMap[i].Messages
 				s.recievedWitnessedMessagesBool[i] = true
+				s.step = i+1
+				stepNow = s.step
+				// check if there are unwitnessed messages to which this process didn't send and ack previously
+				unAckedUnwitnessedMessages:= s.recievedTempUnwitnessedMessages[stepNow]
+				for _, uauwm := range unAckedUnwitnessedMessages {
+					s.recievedUnwitnessedMessages[uauwm.Step] = append(s.recievedUnwitnessedMessages[uauwm.Step], uauwm)
+					newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: uauwm}
+					requesterIdentity := uauwm.Id
+					unicastAcknowledgementMessage(requesterIdentity, s, newAck)
+					s.sentAcknowledgementMessages[uauwm.Step] = append(s.sentAcknowledgementMessages[uauwm.Step], newAck)
+					fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, requesterIdentity, newAck.UnwitnessedMessage.Step)
+				}
 			}
 
 			s.step = req.Step
@@ -563,6 +607,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		}
 
+		s.recievedTempUnwitnessedMessagesLock.Unlock()
 		s.recievedWitnessedMessagesBoolLock.Unlock()
 		s.recievedThresholdwitnessedMessagesLock.Unlock()
 		s.sentUnwitnessMessagesLock.Unlock()
