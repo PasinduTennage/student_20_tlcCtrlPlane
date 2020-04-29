@@ -364,14 +364,35 @@ func newService(c *onet.Context) (onet.Service, error) {
 		hasEnoughAcks := s.recievedAcksBool[stepNow]
 
 		if !hasEnoughAcks {
+			// check whether this process has received a majority of acks from a majority of nodes
+
 			lenRecievedAcks := len(s.recievedAcknowledgesMessages[stepNow])
 			if lenRecievedAcks >= s.majority {
-				//fmt.Printf("%s Recieved a majority of Acks \n", s.ServerIdentity())
-				s.recievedAcksBool[stepNow] = true
-				newWitness := &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity()}
-				broadcastWitnessedMessage(s.roster.List, s, newWitness)
-				s.sentThresholdWitnessedMessages[stepNow] = newWitness
-				fmt.Printf("%s at %d broadcast witnessed with step %d \n", s.ServerIdentity(), s.step, newWitness.Step)
+
+				// check if they are from distinct processes, no duplicates
+				nodes := make([]*network.ServerIdentity, 0)
+				for _, ack := range s.recievedAcknowledgesMessages[stepNow] {
+					ackId:= ack.Id
+					exists:= false
+					for _, num := range nodes {
+						if num == ackId {
+							exists = true
+							break
+						}
+					}
+					if !exists{
+						nodes = append(nodes, ackId)
+					}
+				}
+				if len(nodes) >=s.majority{
+					//fmt.Printf("%s Recieved a majority of Acks \n", s.ServerIdentity())
+					s.recievedAcksBool[stepNow] = true
+					newWitness := &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity()}
+					broadcastWitnessedMessage(s.roster.List, s, newWitness)
+					s.sentThresholdWitnessedMessages[stepNow] = newWitness
+					fmt.Printf("%s at %d broadcast witnessed with step %d \n", s.ServerIdentity(), s.step, newWitness.Step)
+				}
+
 			}
 		}
 		s.sentThresholdWitnessedMessagesLock.Unlock()
@@ -394,14 +415,14 @@ func newService(c *onet.Context) (onet.Service, error) {
 			return nil
 		}
 
-		s.stepLock.Lock()
-		r := rand.Intn(1000)
-		if r%97 == 0 {
-			fmt.Printf("%s at %d dropped witnessed from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
-			s.stepLock.Unlock()
-			return nil
-		}
-		s.stepLock.Unlock()
+		//s.stepLock.Lock()
+		//r := rand.Intn(1000)
+		//if r%97 == 0 {
+		//	fmt.Printf("%s at %d dropped witnessed from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
+		//	s.stepLock.Unlock()
+		//	return nil
+		//}
+		//s.stepLock.Unlock()
 
 		s.stepLock.Lock()
 		s.sentUnwitnessMessagesLock.Lock()
@@ -420,33 +441,52 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 			if lenThresholdWitnessedMessages >= s.majority {
 
-				s.recievedWitnessedMessagesBool[stepNow] = true
 
-				s.step = s.step + 1
-				stepNow = s.step
-
-				fmt.Printf("%s increased time step to %d \n", s.ServerIdentity(), stepNow)
-
-				unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity()}
-
-				if s.roster == nil {
-					fmt.Printf("%s's roster is nil \n", s.ServerIdentity())
-					return nil
+				nodes := make([]*network.ServerIdentity, 0)
+				for _, twm := range s.recievedThresholdwitnessedMessages[stepNow] {
+					twmId:= twm.Id
+					exists:= false
+					for _, num := range nodes {
+						if num == twmId {
+							exists = true
+							break
+						}
+					}
+					if !exists{
+						nodes = append(nodes, twmId)
+					}
 				}
 
-				if stepNow > 1000 {
-					return nil
+				if len(nodes) >=s.majority{
+					s.recievedWitnessedMessagesBool[stepNow] = true
+
+					s.step = s.step + 1
+					stepNow = s.step
+
+					fmt.Printf("%s increased time step to %d \n", s.ServerIdentity(), stepNow)
+
+					unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity()}
+
+					if s.roster == nil {
+						fmt.Printf("%s's roster is nil \n", s.ServerIdentity())
+						return nil
+					}
+
+					if stepNow > 1000 {
+						return nil
+					}
+
+					value, ok := s.sentUnwitnessMessages[stepNow]
+
+					if !ok {
+						broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
+						s.sentUnwitnessMessages[stepNow] = unwitnessedMessage
+						fmt.Printf("%s at %d broadcast unwitnessed with step %d \n", s.ServerIdentity(), s.step, s.step)
+					} else {
+						fmt.Printf("Unwitnessed message %s for step %d from %s is already sent; possible race condition \n", value, stepNow, s.ServerIdentity())
+					}
 				}
 
-				value, ok := s.sentUnwitnessMessages[stepNow]
-
-				if !ok {
-					broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
-					s.sentUnwitnessMessages[stepNow] = unwitnessedMessage
-					fmt.Printf("%s at %d broadcast unwitnessed with step %d \n", s.ServerIdentity(), s.step, s.step)
-				} else {
-					fmt.Printf("Unwitnessed message %s for step %d from %s is already sent; possible race condition \n", value, stepNow, s.ServerIdentity())
-				}
 			}
 
 		}
