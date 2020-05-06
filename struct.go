@@ -44,19 +44,22 @@ type CountReply struct {
 }
 
 type UnwitnessedMessage struct {
-	Step int
-	Id   *network.ServerIdentity
+	Step      int
+	Id        *network.ServerIdentity
+	SentArray []string
 }
 
 type WitnessedMessage struct {
 	Step int
 	Id   *network.ServerIdentity
 	//acknowledgeSet list.List how to define a list
+	SentArray []string
 }
 
 type AcknowledgementMessage struct {
 	Id                 *network.ServerIdentity
 	UnwitnessedMessage *UnwitnessedMessage
+	SentArray          []string
 }
 
 type InitRequest struct {
@@ -71,8 +74,9 @@ type CatchUpMessage struct {
 	Id                                 *network.ServerIdentity
 	Step                               int
 	RecievedThresholdwitnessedMessages map[int]*ArrayWitnessedMessages
+	SentArray                          []string
 }
 
 type ArrayWitnessedMessages struct {
-	Messages              []*WitnessedMessage
+	Messages []*WitnessedMessage
 }
