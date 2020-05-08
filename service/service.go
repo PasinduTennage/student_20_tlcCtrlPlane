@@ -14,6 +14,7 @@ import (
 	"go.dedis.ch/onet/v3"
 	"go.dedis.ch/onet/v3/log"
 	"go.dedis.ch/onet/v3/network"
+	"math/rand"
 	"strconv"
 	"sync"
 	"time"
@@ -269,7 +270,12 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 	time.Sleep(2 * time.Second)
 
 	stepNow := s.step
-	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s)}
+	randomNumber := rand.Intn(10000)
+	proposal := rand.Intn(10)
+
+	fmt.Printf("%s's initial proposal is %d \n", s.ServerIdentity(), proposal)
+
+	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s), Proposal: proposal, RandomNumber: randomNumber}
 	broadcastUnwitnessedMessage(memberNodes, s, unwitnessedMessage)
 
 	s.sentUnwitnessMessages[stepNow] = unwitnessedMessage // check syncMaps in go
@@ -373,6 +379,39 @@ func convertString1DtoInt2D(array []string, s *Service) [][]int {
 
 	return intArray
 
+}
+
+func convertNetworkIdtoStringArray(nodeIds []*network.ServerIdentity, s *Service) [] string{
+	stringArray := make([]string, s.majority)
+	for i:=0; i < s.majority; i++{
+		jsonNodeId, _ := json.Marshal(nodeIds[i])
+		stringArray[i] = string(jsonNodeId)
+	}
+	return stringArray
+}
+
+func convertStringArraytoNetworkId(array [] string, s *Service) []*network.ServerIdentity{
+	IdArray := make([]*network.ServerIdentity, s.majority)
+	for i:=0; i<s.majority; i++{
+		byteArray := []byte(array[i])
+		var m *network.ServerIdentity
+		err := json.Unmarshal(byteArray, &m)
+		if err == nil{
+			IdArray[i] = m
+		}
+	}
+	return IdArray
+}
+
+func findGlobalMaxProposal(s *Service, step int) int{
+	messages := s.recievedThresholdwitnessedMessages[step]
+	globalMax := 0
+	for i:=0; i < len(messages); i++{
+		if messages[i].RandomNumber > globalMax {
+			globalMax = messages[i].RandomNumber
+		}
+	}
+	return globalMax
 }
 
 func max(num1 int, num2 int) int {
@@ -512,7 +551,19 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 			if len(nodes) >= s.majority {
 				//fmt.Printf("%s Recieved a majority of Acks \n", s.ServerIdentity())
 				s.recievedAcksBool[stepNow] = true
-				newWitness := &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s)}
+				var newWitness *template.WitnessedMessage
+				if stepNow == 0 {
+					newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s), RandomNumber: s.sentUnwitnessMessages[s.step].RandomNumber, Proposal: s.sentUnwitnessMessages[s.step].Proposal}
+				}
+				if stepNow == 1 {
+					newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s), Nodes:s.sentUnwitnessMessages[stepNow].Nodes}
+				}
+				if stepNow == 2 {
+					newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s)}
+				}
+				if stepNow == 3 {
+
+				}
 				broadcastWitnessedMessage(s.roster.List, s, newWitness)
 				s.sentThresholdWitnessedMessages[stepNow] = newWitness
 				//fmt.Printf("%s at %d broadcast witnessed with step %d \n", s.ServerIdentity(), s.step, newWitness.Step)
@@ -583,7 +634,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 			if len(nodes) >= s.majority {
 				s.recievedWitnessedMessagesBool[stepNow] = true
-				for _, nodeId := range nodes{
+				for _, nodeId := range nodes {
 					for _, twm := range s.recievedThresholdwitnessedMessages[stepNow] {
 						jsnNodeId, _ := json.Marshal(nodeId)
 						jsnTwmId, _ := json.Marshal(twm.Id)
@@ -600,7 +651,36 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 				fmt.Printf("%s increased time step to %d \n", s.ServerIdentity(), stepNow)
 
-				unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s)}
+				var unwitnessedMessage *template.UnwitnessedMessage
+
+				if stepNow == 1 {
+
+					unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s), Nodes:convertNetworkIdtoStringArray(nodes, s)}
+
+				}
+
+				if stepNow == 2 {
+					unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s)}
+				}
+
+				if stepNow == 3 {
+					// it's time to take the decision
+					consensusFound := false
+					celebrityMessages := s.recievedThresholdStepWitnessedMessages[1]
+					CelibrityNodes := make([]*network.ServerIdentity, 0)
+					for i:=0; i< len(celebrityMessages); i++{
+						CelibrityNodes= append(CelibrityNodes, convertStringArraytoNetworkId(celebrityMessages[i].Nodes, s)...) //possible duplicates
+					}
+					globalMaxProposal := findGlobalMaxProposal(s, 0)
+					for i:=0; i<len(CelibrityNodes); i++{
+						for j:=0; j<len(s.recievedThresholdwitnessedMessages; j++){
+
+						}
+
+					}
+
+
+				}
 
 				if s.roster == nil {
 					//fmt.Printf("%s's roster is nil \n", s.ServerIdentity())
