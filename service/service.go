@@ -76,6 +76,9 @@ type Service struct {
 	recievedThresholdwitnessedMessages     map[int][]*template.WitnessedMessage
 	recievedThresholdwitnessedMessagesLock *sync.Mutex
 
+	recievedThresholdStepWitnessedMessages     map[int][]*template.WitnessedMessage
+	recievedThresholdStepWitnessedMessagesLock *sync.Mutex
+
 	recievedAcksBool     map[int]bool
 	recievedAcksBoolLock *sync.Mutex
 
@@ -206,36 +209,36 @@ func unicastAcknowledgementMessage(memberNode *network.ServerIdentity, s *Servic
 
 }
 
-func unicastCatchUpMessage(memberNode *network.ServerIdentity, s *Service, message *template.CatchUpMessage) {
-	e := s.SendRaw(memberNode, message)
-
-	senderIndex := -1
-	receiverIndex := -1
-
-	for i := 0; i < len(s.roster.List); i++ {
-
-		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-		myServerId, _ := json.Marshal(s.ServerIdentity())
-
-		nodeId, _ := json.Marshal(memberNode)
-
-		if string(rosterIdAtI) == string(myServerId) {
-			senderIndex = i
-		}
-		if string(rosterIdAtI) == string(nodeId) {
-			receiverIndex = i
-		}
-
-	}
-
-	s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
-
-	if e != nil {
-		panic(e)
-	}
-
-}
+//func unicastCatchUpMessage(memberNode *network.ServerIdentity, s *Service, message *template.CatchUpMessage) {
+//	e := s.SendRaw(memberNode, message)
+//
+//	senderIndex := -1
+//	receiverIndex := -1
+//
+//	for i := 0; i < len(s.roster.List); i++ {
+//
+//		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
+//
+//		myServerId, _ := json.Marshal(s.ServerIdentity())
+//
+//		nodeId, _ := json.Marshal(memberNode)
+//
+//		if string(rosterIdAtI) == string(myServerId) {
+//			senderIndex = i
+//		}
+//		if string(rosterIdAtI) == string(nodeId) {
+//			receiverIndex = i
+//		}
+//
+//	}
+//
+//	s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
+//
+//	if e != nil {
+//		panic(e)
+//	}
+//
+//}
 
 func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse, error) {
 
@@ -249,7 +252,7 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	s.majority = len(memberNodes)/2 + 1
 
-	s.maxTime = 200
+	s.maxTime = 10
 
 	s.sent = make([][]int, len(s.roster.List))
 	for i := 0; i < len(s.roster.List); i++ {
@@ -429,16 +432,16 @@ func handleUnwitnessedMessage(s *Service, req *template.UnwitnessedMessage) {
 		s.sentAcknowledgementMessages[req.Step] = append(s.sentAcknowledgementMessages[req.Step], newAck)
 		//fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, req.Id, newAck.UnwitnessedMessage.Step)
 
-		catchUpThresholdwitnessedMessages := make(map[int]*template.ArrayWitnessedMessages)
-		for i := req.Step; i < stepNow; i++ {
-
-			recievedMessages := s.recievedThresholdwitnessedMessages[i]
-			newArrayWitnessedMessages := &template.ArrayWitnessedMessages{Messages: recievedMessages}
-			catchUpThresholdwitnessedMessages[i] = newArrayWitnessedMessages
-		}
-
-		newCatchUpMessage := &template.CatchUpMessage{Id: s.ServerIdentity(), Step: stepNow, RecievedThresholdwitnessedMessages: catchUpThresholdwitnessedMessages, SentArray: convertInt2DtoString1D(s.sent, s)}
-		unicastCatchUpMessage(req.Id, s, newCatchUpMessage)
+		//catchUpThresholdwitnessedMessages := make(map[int]*template.ArrayWitnessedMessages)
+		//for i := req.Step; i < stepNow; i++ {
+		//
+		//	recievedMessages := s.recievedThresholdwitnessedMessages[i]
+		//	newArrayWitnessedMessages := &template.ArrayWitnessedMessages{Messages: recievedMessages}
+		//	catchUpThresholdwitnessedMessages[i] = newArrayWitnessedMessages
+		//}
+		//
+		//newCatchUpMessage := &template.CatchUpMessage{Id: s.ServerIdentity(), Step: stepNow, RecievedThresholdwitnessedMessages: catchUpThresholdwitnessedMessages, SentArray: convertInt2DtoString1D(s.sent, s)}
+		//unicastCatchUpMessage(req.Id, s, newCatchUpMessage)
 		//fmt.Printf("%s at %d sent catchup to %s with step %d \n", s.ServerIdentity(), s.step, req.Id, stepNow)
 
 	} else if req.Step > stepNow {
@@ -580,6 +583,17 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 			if len(nodes) >= s.majority {
 				s.recievedWitnessedMessagesBool[stepNow] = true
+				for _, nodeId := range nodes{
+					for _, twm := range s.recievedThresholdwitnessedMessages[stepNow] {
+						jsnNodeId, _ := json.Marshal(nodeId)
+						jsnTwmId, _ := json.Marshal(twm.Id)
+
+						if string(jsnNodeId) == string(jsnTwmId) {
+							s.recievedThresholdStepWitnessedMessages[stepNow] = append(s.recievedThresholdStepWitnessedMessages[stepNow], twm)
+							break
+						}
+					}
+				}
 
 				s.step = s.step + 1
 				stepNow = s.step
@@ -625,86 +639,86 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 	}
 }
 
-func handleCatchUpMessage(s *Service, req *template.CatchUpMessage) {
-
-	reqSentArray := convertString1DtoInt2D(req.SentArray, s)
-
-	for i := 0; i < len(s.roster.List); i++ {
-		for j := 0; j < len(s.roster.List); j++ {
-			s.sent[i][j] = max(s.sent[i][j], reqSentArray[i][j])
-		}
-	}
-
-	reqIndex := -1
-
-	for i := 0; i < len(s.roster.List); i++ {
-
-		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-		reqId, _ := json.Marshal(req.Id)
-
-		if string(rosterIdAtI) == string(reqId) {
-			reqIndex = i
-			break
-		}
-
-	}
-
-	s.deliv[reqIndex] = s.deliv[reqIndex] + 1
-
-	//fmt.Printf("%s at %d received catchup from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
-
-	stepNow := s.step
-
-	if stepNow < req.Step {
-
-		catchUpMap := req.RecievedThresholdwitnessedMessages
-		for i := stepNow; i < req.Step; i++ {
-			s.recievedThresholdwitnessedMessages[i] = catchUpMap[i].Messages
-			s.recievedWitnessedMessagesBool[i] = true
-			s.step = i + 1
-			stepNow = s.step
-
-			// check if there are unwitnessed messages to which this process didn't send and ack previously
-			unAckedUnwitnessedMessages := s.recievedTempUnwitnessedMessages[stepNow]
-			for _, uauwm := range unAckedUnwitnessedMessages {
-				s.recievedUnwitnessedMessages[uauwm.Step] = append(s.recievedUnwitnessedMessages[uauwm.Step], uauwm)
-				newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: uauwm, SentArray: convertInt2DtoString1D(s.sent, s)}
-				requesterIdentity := uauwm.Id
-				unicastAcknowledgementMessage(requesterIdentity, s, newAck)
-				s.sentAcknowledgementMessages[uauwm.Step] = append(s.sentAcknowledgementMessages[uauwm.Step], newAck)
-				//fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, requesterIdentity, newAck.UnwitnessedMessage.Step)
-			}
-		}
-
-		s.step = req.Step
-		stepNow = s.step
-
-		fmt.Printf("%s' increased time step to %d  with catched up \n", s.ServerIdentity(), stepNow)
-
-		unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s)}
-
-		if s.roster == nil {
-			//fmt.Printf("%s's roster is nil \n", s.ServerIdentity())
-			return
-		}
-
-		if stepNow > s.maxTime {
-			return
-		}
-
-		value, ok := s.sentUnwitnessMessages[stepNow]
-
-		if !ok {
-			broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
-			s.sentUnwitnessMessages[stepNow] = unwitnessedMessage
-			//fmt.Printf("%s at %d broadcast unwitnessed with step %d \n", s.ServerIdentity(), s.step, s.step)
-		} else {
-			fmt.Printf("Unwitnessed message %s for step %d from %s is already sent; possible race condition \n", value, stepNow, s.ServerIdentity())
-		}
-
-	}
-}
+//func handleCatchUpMessage(s *Service, req *template.CatchUpMessage) {
+//
+//	reqSentArray := convertString1DtoInt2D(req.SentArray, s)
+//
+//	for i := 0; i < len(s.roster.List); i++ {
+//		for j := 0; j < len(s.roster.List); j++ {
+//			s.sent[i][j] = max(s.sent[i][j], reqSentArray[i][j])
+//		}
+//	}
+//
+//	reqIndex := -1
+//
+//	for i := 0; i < len(s.roster.List); i++ {
+//
+//		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
+//
+//		reqId, _ := json.Marshal(req.Id)
+//
+//		if string(rosterIdAtI) == string(reqId) {
+//			reqIndex = i
+//			break
+//		}
+//
+//	}
+//
+//	s.deliv[reqIndex] = s.deliv[reqIndex] + 1
+//
+//	//fmt.Printf("%s at %d received catchup from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
+//
+//	stepNow := s.step
+//
+//	if stepNow < req.Step {
+//
+//		catchUpMap := req.RecievedThresholdwitnessedMessages
+//		for i := stepNow; i < req.Step; i++ {
+//			s.recievedThresholdwitnessedMessages[i] = catchUpMap[i].Messages
+//			s.recievedWitnessedMessagesBool[i] = true
+//			s.step = i + 1
+//			stepNow = s.step
+//
+//			// check if there are unwitnessed messages to which this process didn't send and ack previously
+//			unAckedUnwitnessedMessages := s.recievedTempUnwitnessedMessages[stepNow]
+//			for _, uauwm := range unAckedUnwitnessedMessages {
+//				s.recievedUnwitnessedMessages[uauwm.Step] = append(s.recievedUnwitnessedMessages[uauwm.Step], uauwm)
+//				newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: uauwm, SentArray: convertInt2DtoString1D(s.sent, s)}
+//				requesterIdentity := uauwm.Id
+//				unicastAcknowledgementMessage(requesterIdentity, s, newAck)
+//				s.sentAcknowledgementMessages[uauwm.Step] = append(s.sentAcknowledgementMessages[uauwm.Step], newAck)
+//				//fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, requesterIdentity, newAck.UnwitnessedMessage.Step)
+//			}
+//		}
+//
+//		s.step = req.Step
+//		stepNow = s.step
+//
+//		fmt.Printf("%s' increased time step to %d  with catched up \n", s.ServerIdentity(), stepNow)
+//
+//		unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s)}
+//
+//		if s.roster == nil {
+//			//fmt.Printf("%s's roster is nil \n", s.ServerIdentity())
+//			return
+//		}
+//
+//		if stepNow > s.maxTime {
+//			return
+//		}
+//
+//		value, ok := s.sentUnwitnessMessages[stepNow]
+//
+//		if !ok {
+//			broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
+//			s.sentUnwitnessMessages[stepNow] = unwitnessedMessage
+//			//fmt.Printf("%s at %d broadcast unwitnessed with step %d \n", s.ServerIdentity(), s.step, s.step)
+//		} else {
+//			fmt.Printf("Unwitnessed message %s for step %d from %s is already sent; possible race condition \n", value, stepNow, s.ServerIdentity())
+//		}
+//
+//	}
+//}
 
 // newService receives the context that holds information about the node it's
 // running on. Saving and loading can be done using the context. The data will
@@ -736,6 +750,9 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		recievedThresholdwitnessedMessages:     make(map[int][]*template.WitnessedMessage),
 		recievedThresholdwitnessedMessagesLock: new(sync.Mutex),
+
+		recievedThresholdStepWitnessedMessages:     make(map[int][]*template.WitnessedMessage),
+		recievedThresholdStepWitnessedMessagesLock: new(sync.Mutex),
 
 		recievedAcksBool:     make(map[int]bool),
 		recievedAcksBoolLock: new(sync.Mutex),
@@ -920,56 +937,56 @@ func newService(c *onet.Context) (onet.Service, error) {
 		handleBufferedMessages(s)
 		return nil
 	})
-	s.RegisterProcessorFunc(catchUpMessageID, func(arg1 *network.Envelope) error {
-		defer s.stepLock.Unlock()
-		s.stepLock.Lock()
-
-		req, ok := arg1.Msg.(*template.CatchUpMessage)
-		if !ok {
-			log.Error(s.ServerIdentity(), "failed to cast to catch up message")
-			return nil
-		}
-
-		// check if this message can be received correctly
-
-		myIndex := -1
-		for i := 0; i < len(s.roster.List); i++ {
-
-			rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-			myServerId, _ := json.Marshal(s.ServerIdentity())
-
-			if string(rosterIdAtI) == string(myServerId) {
-				myIndex = i
-				break
-			}
-
-		}
-
-		canDeleiver := true
-
-		reqSentArray := convertString1DtoInt2D(req.SentArray, s)
-
-		for i := 0; i < len(s.roster.List); i++ {
-			if s.deliv[i] < reqSentArray[i][myIndex] {
-				canDeleiver = false
-				break
-			}
-		}
-
-		if canDeleiver {
-			//fmt.Printf("INFO %s can deliver a message from %s with number %d \n", s.ServerIdentity(), req.Id, req.Number)
-			handleCatchUpMessage(s, req)
-
-		} else {
-			// add the message to temp buffer
-			//fmt.Printf("INFO %s can not deliver a catchup message from %s with number %d, buffering \n", s.ServerIdentity(), req.Id, req.Step)
-			s.bufferedCatchupMessages = append(s.bufferedCatchupMessages, req)
-		}
-
-		handleBufferedMessages(s)
-		return nil
-	})
+	//s.RegisterProcessorFunc(catchUpMessageID, func(arg1 *network.Envelope) error {
+	//	defer s.stepLock.Unlock()
+	//	s.stepLock.Lock()
+	//
+	//	req, ok := arg1.Msg.(*template.CatchUpMessage)
+	//	if !ok {
+	//		log.Error(s.ServerIdentity(), "failed to cast to catch up message")
+	//		return nil
+	//	}
+	//
+	//	// check if this message can be received correctly
+	//
+	//	myIndex := -1
+	//	for i := 0; i < len(s.roster.List); i++ {
+	//
+	//		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
+	//
+	//		myServerId, _ := json.Marshal(s.ServerIdentity())
+	//
+	//		if string(rosterIdAtI) == string(myServerId) {
+	//			myIndex = i
+	//			break
+	//		}
+	//
+	//	}
+	//
+	//	canDeleiver := true
+	//
+	//	reqSentArray := convertString1DtoInt2D(req.SentArray, s)
+	//
+	//	for i := 0; i < len(s.roster.List); i++ {
+	//		if s.deliv[i] < reqSentArray[i][myIndex] {
+	//			canDeleiver = false
+	//			break
+	//		}
+	//	}
+	//
+	//	if canDeleiver {
+	//		//fmt.Printf("INFO %s can deliver a message from %s with number %d \n", s.ServerIdentity(), req.Id, req.Number)
+	//		handleCatchUpMessage(s, req)
+	//
+	//	} else {
+	//		// add the message to temp buffer
+	//		//fmt.Printf("INFO %s can not deliver a catchup message from %s with number %d, buffering \n", s.ServerIdentity(), req.Id, req.Step)
+	//		s.bufferedCatchupMessages = append(s.bufferedCatchupMessages, req)
+	//	}
+	//
+	//	handleBufferedMessages(s)
+	//	return nil
+	//})
 
 	return s, nil
 }
@@ -1129,55 +1146,55 @@ func handleBufferedMessages(s *Service) {
 		}
 
 	}
-	if len(s.bufferedCatchupMessages) > 0 {
-
-		myIndex := -1
-		for i := 0; i < len(s.roster.List); i++ {
-
-			rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-			myServerId, _ := json.Marshal(s.ServerIdentity())
-
-			if string(rosterIdAtI) == string(myServerId) {
-				myIndex = i
-				break
-			}
-
-		}
-
-		processedBufferedMessages := make([]int, 0)
-		for k := 0; k < len(s.bufferedCatchupMessages); k++ {
-
-			bufferedRequest := s.bufferedCatchupMessages[k]
-
-			if bufferedRequest == nil {
-				continue
-			}
-
-			canDeleiver := true
-			reqSentArray := convertString1DtoInt2D(bufferedRequest.SentArray, s)
-
-			for i := 0; i < len(s.roster.List); i++ {
-				if s.deliv[i] < reqSentArray[i][myIndex] {
-					canDeleiver = false
-					break
-				}
-			}
-
-			if canDeleiver {
-				//remove message from buffered requests
-				//firstHalf := s.bufferedMessages[:k]
-				//secondHalf := s.bufferedMessages[k+1:]
-				//s.bufferedMessages = append(firstHalf, secondHalf...)
-				processedBufferedMessages = append(processedBufferedMessages, k)
-				//fmt.Printf("INFO %s process a buffered message from %s with number %d \n", s.ServerIdentity(), bufferedRequest.Id, bufferedRequest.Step)
-				handleCatchUpMessage(s, bufferedRequest)
-			}
-		}
-		for q := 0; q < len(processedBufferedMessages); q++ {
-			s.bufferedCatchupMessages[processedBufferedMessages[q]] = nil
-		}
-
-	}
+	//if len(s.bufferedCatchupMessages) > 0 {
+	//
+	//	myIndex := -1
+	//	for i := 0; i < len(s.roster.List); i++ {
+	//
+	//		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
+	//
+	//		myServerId, _ := json.Marshal(s.ServerIdentity())
+	//
+	//		if string(rosterIdAtI) == string(myServerId) {
+	//			myIndex = i
+	//			break
+	//		}
+	//
+	//	}
+	//
+	//	processedBufferedMessages := make([]int, 0)
+	//	for k := 0; k < len(s.bufferedCatchupMessages); k++ {
+	//
+	//		bufferedRequest := s.bufferedCatchupMessages[k]
+	//
+	//		if bufferedRequest == nil {
+	//			continue
+	//		}
+	//
+	//		canDeleiver := true
+	//		reqSentArray := convertString1DtoInt2D(bufferedRequest.SentArray, s)
+	//
+	//		for i := 0; i < len(s.roster.List); i++ {
+	//			if s.deliv[i] < reqSentArray[i][myIndex] {
+	//				canDeleiver = false
+	//				break
+	//			}
+	//		}
+	//
+	//		if canDeleiver {
+	//			//remove message from buffered requests
+	//			//firstHalf := s.bufferedMessages[:k]
+	//			//secondHalf := s.bufferedMessages[k+1:]
+	//			//s.bufferedMessages = append(firstHalf, secondHalf...)
+	//			processedBufferedMessages = append(processedBufferedMessages, k)
+	//			//fmt.Printf("INFO %s process a buffered message from %s with number %d \n", s.ServerIdentity(), bufferedRequest.Id, bufferedRequest.Step)
+	//			handleCatchUpMessage(s, bufferedRequest)
+	//		}
+	//	}
+	//	for q := 0; q < len(processedBufferedMessages); q++ {
+	//		s.bufferedCatchupMessages[processedBufferedMessages[q]] = nil
+	//	}
+	//
+	//}
 
 }
