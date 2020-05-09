@@ -403,7 +403,7 @@ func convertStringArraytoNetworkId(array [] string, s *Service) []*network.Serve
 	return IdArray
 }
 
-func findGlobalMaxProposal(s *Service, step int) int{
+func findGlobalMaxRandomNumber(s *Service, step int) int{
 	messages := s.recievedThresholdwitnessedMessages[step]
 	globalMax := 0
 	for i:=0; i < len(messages); i++{
@@ -551,6 +551,7 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 			if len(nodes) >= s.majority {
 				//fmt.Printf("%s Recieved a majority of Acks \n", s.ServerIdentity())
 				s.recievedAcksBool[stepNow] = true
+
 				var newWitness *template.WitnessedMessage
 				if stepNow == 0 {
 					newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s), RandomNumber: s.sentUnwitnessMessages[s.step].RandomNumber, Proposal: s.sentUnwitnessMessages[s.step].Proposal}
@@ -666,18 +667,76 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 				if stepNow == 3 {
 					// it's time to take the decision
 					consensusFound := false
+					consensusValue := -1
 					celebrityMessages := s.recievedThresholdStepWitnessedMessages[1]
 					CelibrityNodes := make([]*network.ServerIdentity, 0)
 					for i:=0; i< len(celebrityMessages); i++{
 						CelibrityNodes= append(CelibrityNodes, convertStringArraytoNetworkId(celebrityMessages[i].Nodes, s)...) //possible duplicates
 					}
-					globalMaxProposal := findGlobalMaxProposal(s, 0)
+					globalMaxRandomNumber := findGlobalMaxRandomNumber(s, 0)
+					fmt.Printf("Global max random number according to %s is %d \n", s.ServerIdentity(), globalMaxRandomNumber)
 					for i:=0; i<len(CelibrityNodes); i++{
-						for j:=0; j<len(s.recievedThresholdwitnessedMessages; j++){
+						jsnNodeId, _ := json.Marshal(CelibrityNodes[i])
 
+						for j:=0; j<len(s.recievedThresholdwitnessedMessages[0]); j++{
+
+							jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[0][j].Id)
+
+							if string(jsnNodeId) == string(jsnTwmId) {
+
+								if s.recievedThresholdwitnessedMessages[0][j].RandomNumber == globalMaxRandomNumber {
+									consensusFound = true
+									consensusValue = s.recievedThresholdwitnessedMessages[0][j].Proposal
+								}
+
+								break
+							}
+						}
+
+						if consensusFound {
+							break
 						}
 
 					}
+
+					if !consensusFound {
+						witnessedMessages := s.recievedThresholdwitnessedMessages[1]
+						CelibrityNodes := make([]*network.ServerIdentity, 0)
+						for i:=0; i< len(witnessedMessages); i++{
+							CelibrityNodes= append(CelibrityNodes, convertStringArraytoNetworkId(witnessedMessages[i].Nodes, s)...) //possible duplicates
+						}
+						globalMaxRandomNumber := findGlobalMaxRandomNumber(s, 0)
+						for i:=0; i<len(CelibrityNodes); i++{
+							jsnNodeId, _ := json.Marshal(CelibrityNodes[i])
+
+							for j:=0; j<len(s.recievedThresholdwitnessedMessages[0]); j++{
+
+								jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[0][j].Id)
+
+								if string(jsnNodeId) == string(jsnTwmId) {
+
+									if s.recievedThresholdwitnessedMessages[0][j].RandomNumber == globalMaxRandomNumber {
+										consensusFound = true
+										consensusValue = s.recievedThresholdwitnessedMessages[0][j].Proposal
+									}
+
+									break
+								}
+							}
+
+							if consensusFound {
+								break
+							}
+
+						}
+					}
+					if consensusFound {
+						fmt.Printf("The consensus according to %s is %d\n", s.ServerIdentity(), consensusValue)
+					}else {
+						fmt.Print("The fucking consensus is not found \n")
+					}
+
+					return
 
 
 				}
