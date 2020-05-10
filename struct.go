@@ -47,6 +47,9 @@ type UnwitnessedMessage struct {
 	Step      int
 	Id        *network.ServerIdentity
 	SentArray []string
+	RandomNumber int
+	Proposal int
+	Nodes [] string
 }
 
 type WitnessedMessage struct {
@@ -54,6 +57,9 @@ type WitnessedMessage struct {
 	Id   *network.ServerIdentity
 	//acknowledgeSet list.List how to define a list
 	SentArray []string
+	RandomNumber int
+	Proposal int
+	Nodes [] string
 }
 
 type AcknowledgementMessage struct {
