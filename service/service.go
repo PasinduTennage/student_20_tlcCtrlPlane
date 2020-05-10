@@ -273,9 +273,10 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 	randomNumber := rand.Intn(10000)
 	proposal := rand.Intn(10)
 
-	fmt.Printf("%s's initial proposal is %d \n", s.ServerIdentity(), proposal)
+	fmt.Printf("%s's initial proposal is %d and the random number is %d \n", s.ServerIdentity(), proposal, randomNumber)
 
 	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s), Proposal: proposal, RandomNumber: randomNumber}
+
 	broadcastUnwitnessedMessage(memberNodes, s, unwitnessedMessage)
 
 	s.sentUnwitnessMessages[stepNow] = unwitnessedMessage // check syncMaps in go
@@ -394,12 +395,13 @@ func convertStringArraytoNetworkId(array [] string, s *Service) []*network.Serve
 	IdArray := make([]*network.ServerIdentity, s.majority)
 	for i:=0; i<s.majority; i++{
 		byteArray := []byte(array[i])
-		var m *network.ServerIdentity
-		err := json.Unmarshal(byteArray, &m)
-		if err == nil{
-			IdArray[i] = m
-		}
+		var m network.ServerIdentity
+		json.Unmarshal(byteArray, &m)
+
+		IdArray[i] = &m
+
 	}
+
 	return IdArray
 }
 
@@ -423,6 +425,7 @@ func max(num1 int, num2 int) int {
 }
 
 func handleUnwitnessedMessage(s *Service, req *template.UnwitnessedMessage) {
+
 
 	reqSentArray := convertString1DtoInt2D(req.SentArray, s)
 
@@ -558,6 +561,7 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 				}
 				if stepNow == 1 {
 					newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s), Nodes:s.sentUnwitnessMessages[stepNow].Nodes}
+
 				}
 				if stepNow == 2 {
 					newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s)}
@@ -575,6 +579,7 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 }
 
 func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
+
 
 	reqSentArray := convertString1DtoInt2D(req.SentArray, s)
 
@@ -647,6 +652,8 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					}
 				}
 
+				//fmt.Printf("The step threshold witnessed message array is %s for %d \n", s.recievedThresholdStepWitnessedMessages[stepNow], stepNow)
+
 				s.step = s.step + 1
 				stepNow = s.step
 
@@ -661,6 +668,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 				}
 
 				if stepNow == 2 {
+
 					unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s)}
 				}
 
@@ -669,20 +677,29 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					consensusFound := false
 					consensusValue := -1
 					celebrityMessages := s.recievedThresholdStepWitnessedMessages[1]
-					CelibrityNodes := make([]*network.ServerIdentity, 0)
+
+					CelibrityNodes := make([]string, 0)
 					for i:=0; i< len(celebrityMessages); i++{
-						CelibrityNodes= append(CelibrityNodes, convertStringArraytoNetworkId(celebrityMessages[i].Nodes, s)...) //possible duplicates
+						CelibrityNodes= append(CelibrityNodes, celebrityMessages[i].Nodes...) //possible duplicates
 					}
+
+					//fmt.Printf("Celebrity Nodes  are %s \n", CelibrityNodes)
+
+					//fmt.Printf("The set of celebrity nodes according to %s is %s \n", s.ServerIdentity(), CelibrityNodes)
 					globalMaxRandomNumber := findGlobalMaxRandomNumber(s, 0)
-					fmt.Printf("Global max random number according to %s is %d \n", s.ServerIdentity(), globalMaxRandomNumber)
+					//fmt.Printf("Global max random number according to %s is %d \n", s.ServerIdentity(), globalMaxRandomNumber)
 					for i:=0; i<len(CelibrityNodes); i++{
-						jsnNodeId, _ := json.Marshal(CelibrityNodes[i])
+
+						//fmt.Printf("Json Node id is %s \n", string(CelibrityNodes[i]))
 
 						for j:=0; j<len(s.recievedThresholdwitnessedMessages[0]); j++{
 
 							jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[0][j].Id)
+							//fmt.Printf("Json Node id from message  is %s \n", string(jsnTwmId))
 
-							if string(jsnNodeId) == string(jsnTwmId) {
+							if string(CelibrityNodes[i]) == string(jsnTwmId) {
+
+
 
 								if s.recievedThresholdwitnessedMessages[0][j].RandomNumber == globalMaxRandomNumber {
 									consensusFound = true
@@ -701,20 +718,17 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 					if !consensusFound {
 						witnessedMessages := s.recievedThresholdwitnessedMessages[1]
-						CelibrityNodes := make([]*network.ServerIdentity, 0)
+						CelibrityNodes := make([]string, 0)
 						for i:=0; i< len(witnessedMessages); i++{
-							CelibrityNodes= append(CelibrityNodes, convertStringArraytoNetworkId(witnessedMessages[i].Nodes, s)...) //possible duplicates
+							CelibrityNodes= append(CelibrityNodes, witnessedMessages[i].Nodes...) //possible duplicates
 						}
-						globalMaxRandomNumber := findGlobalMaxRandomNumber(s, 0)
 						for i:=0; i<len(CelibrityNodes); i++{
-							jsnNodeId, _ := json.Marshal(CelibrityNodes[i])
 
 							for j:=0; j<len(s.recievedThresholdwitnessedMessages[0]); j++{
 
 								jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[0][j].Id)
 
-								if string(jsnNodeId) == string(jsnTwmId) {
-
+								if string(CelibrityNodes[i]) == string(jsnTwmId) {
 									if s.recievedThresholdwitnessedMessages[0][j].RandomNumber == globalMaxRandomNumber {
 										consensusFound = true
 										consensusValue = s.recievedThresholdwitnessedMessages[0][j].Proposal
