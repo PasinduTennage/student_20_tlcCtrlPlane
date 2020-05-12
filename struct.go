@@ -44,22 +44,28 @@ type CountReply struct {
 }
 
 type UnwitnessedMessage struct {
-	Step      int
-	Id        *network.ServerIdentity
-	SentArray []string
-	RandomNumber int
-	Proposal int
-	Nodes [] string
+	Step                 int
+	Id                   *network.ServerIdentity
+	SentArray            []string
+	RandomNumber         int
+	NodesProposal        [] string
+	Nodes                [] string
+	ConsensusRoundNumber int
+	IsConsensus          bool
+	ConsensusStepNumber int
 }
 
 type WitnessedMessage struct {
 	Step int
 	Id   *network.ServerIdentity
 	//acknowledgeSet list.List how to define a list
-	SentArray []string
-	RandomNumber int
-	Proposal int
-	Nodes [] string
+	SentArray            []string
+	RandomNumber         int
+	NodesProposal        [] string
+	Nodes                [] string
+	ConsensusRoundNumber int
+	IsConsensus          bool
+	ConsensusStepNumber  int
 }
 
 type AcknowledgementMessage struct {
