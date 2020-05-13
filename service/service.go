@@ -253,7 +253,7 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	s.majority = len(memberNodes)/2 + 1
 
-	s.maxTime = 40
+	s.maxTime = 150
 
 	s.sent = make([][]int, len(s.roster.List))
 	for i := 0; i < len(s.roster.List); i++ {
@@ -284,7 +284,7 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	fmt.Printf("%s's initial proposal random number is %d \n", s.ServerIdentity(), randomNumber)
 
-	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 10, IsConsensus: true, ConsensusStepNumber: 0}
+	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 20, IsConsensus: true, ConsensusStepNumber: 0}
 
 	broadcastUnwitnessedMessage(memberNodes, s, unwitnessedMessage)
 
