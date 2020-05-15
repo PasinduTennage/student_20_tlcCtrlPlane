@@ -53,6 +53,9 @@ type Service struct {
 	step     int
 	stepLock *sync.Mutex
 
+	name        string
+	memberNames []string
+
 	majority int
 
 	maxTime int
@@ -116,29 +119,21 @@ type storage struct {
 	sync.Mutex
 }
 
+func findIndexOf(array []string, item string) int {
+	for i := 0; i < len(array); i++ {
+		if array[i] == item {
+			return i
+		}
+	}
+	return -1
+}
+
 func broadcastUnwitnessedMessage(memberNodes []*network.ServerIdentity, s *Service, message *template.UnwitnessedMessage) {
 	for _, node := range memberNodes {
 		e := s.SendRaw(node, message)
 
-		senderIndex := -1
-		receiverIndex := -1
-
-		for i := 0; i < len(s.roster.List); i++ {
-
-			rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-			myServerId, _ := json.Marshal(s.ServerIdentity())
-
-			nodeId, _ := json.Marshal(node)
-
-			if string(rosterIdAtI) == string(myServerId) {
-				senderIndex = i
-			}
-			if string(rosterIdAtI) == string(nodeId) {
-				receiverIndex = i
-			}
-
-		}
+		senderIndex := findIndexOf(s.memberNames, s.name)
+		receiverIndex := findIndexOf(s.memberNames, string(node.Address))
 
 		s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
 
@@ -152,25 +147,8 @@ func broadcastWitnessedMessage(memberNodes []*network.ServerIdentity, s *Service
 	for _, node := range memberNodes {
 		e := s.SendRaw(node, message)
 
-		senderIndex := -1
-		receiverIndex := -1
-
-		for i := 0; i < len(s.roster.List); i++ {
-
-			rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-			myServerId, _ := json.Marshal(s.ServerIdentity())
-
-			nodeId, _ := json.Marshal(node)
-
-			if string(rosterIdAtI) == string(myServerId) {
-				senderIndex = i
-			}
-			if string(rosterIdAtI) == string(nodeId) {
-				receiverIndex = i
-			}
-
-		}
+		senderIndex := findIndexOf(s.memberNames, s.name)
+		receiverIndex := findIndexOf(s.memberNames, string(node.Address))
 
 		s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
 
@@ -183,25 +161,8 @@ func broadcastWitnessedMessage(memberNodes []*network.ServerIdentity, s *Service
 func unicastAcknowledgementMessage(memberNode *network.ServerIdentity, s *Service, message *template.AcknowledgementMessage) {
 	e := s.SendRaw(memberNode, message)
 
-	senderIndex := -1
-	receiverIndex := -1
-
-	for i := 0; i < len(s.roster.List); i++ {
-
-		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-		myServerId, _ := json.Marshal(s.ServerIdentity())
-
-		nodeId, _ := json.Marshal(memberNode)
-
-		if string(rosterIdAtI) == string(myServerId) {
-			senderIndex = i
-		}
-		if string(rosterIdAtI) == string(nodeId) {
-			receiverIndex = i
-		}
-
-	}
+	senderIndex := findIndexOf(s.memberNames, s.name)
+	receiverIndex := findIndexOf(s.memberNames, string(memberNode.Address))
 
 	s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
 
@@ -212,28 +173,12 @@ func unicastAcknowledgementMessage(memberNode *network.ServerIdentity, s *Servic
 }
 
 //func unicastCatchUpMessage(memberNode *network.ServerIdentity, s *Service, message *template.CatchUpMessage) {
-//	e := s.SendRaw(memberNode, message)
+//e := s.SendRaw(memberNode, message)
 //
-//	senderIndex := -1
-//	receiverIndex := -1
+//	senderIndex := findIndexOf(s.memberNames, s.name)
+//receiverIndex := findIndexOf(s.memberNames, string(memberNode.Address))
 //
-//	for i := 0; i < len(s.roster.List); i++ {
-//
-//		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-//
-//		myServerId, _ := json.Marshal(s.ServerIdentity())
-//
-//		nodeId, _ := json.Marshal(memberNode)
-//
-//		if string(rosterIdAtI) == string(myServerId) {
-//			senderIndex = i
-//		}
-//		if string(rosterIdAtI) == string(nodeId) {
-//			receiverIndex = i
-//		}
-//
-//	}
-//
+
 //	s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
 //
 //	if e != nil {
@@ -272,6 +217,14 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	stepNow := s.step
 
+	s.name = string(s.ServerIdentity().Address)
+
+	s.memberNames = make([]string, len(s.roster.List))
+
+	for i := 0; i < len(s.roster.List); i++ {
+		s.memberNames[i] = string(s.roster.List[i].Address)
+	}
+
 	nodes := make([]*network.ServerIdentity, 0)
 
 	for _, node := range s.roster.List {
@@ -281,16 +234,16 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	strNodes := convertNetworkIdtoStringArray(nodes)
 
-	nodes = convertStringArraytoNetworkId(strNodes)
+	//nodes = convertStringArraytoNetworkId(strNodes)
+	//
+	//s.roster.List = nodes
 
-	s.roster.List= nodes
+	randomNumber := rand.Intn(10000)
 
-	//randomNumber := rand.Intn(10000)
+	fmt.Printf("%s's initial proposal random number is %d \n", s.ServerIdentity(), randomNumber)
 
-	//fmt.Printf("%s's initial proposal random number is %d \n", s.ServerIdentity(), randomNumber)
-
-	//unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 20, IsConsensus: true, ConsensusStepNumber: 0}
-	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), IsConsensus: false}
+	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 20, IsConsensus: true, ConsensusStepNumber: 0}
+	//unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), IsConsensus: false}
 
 	broadcastUnwitnessedMessage(memberNodes, s, unwitnessedMessage)
 
@@ -480,20 +433,7 @@ func handleUnwitnessedMessage(s *Service, req *template.UnwitnessedMessage) {
 		}
 	}
 
-	reqIndex := -1
-
-	for i := 0; i < len(s.roster.List); i++ {
-
-		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-		reqId, _ := json.Marshal(req.Id)
-
-		if string(rosterIdAtI) == string(reqId) {
-			reqIndex = i
-			break
-		}
-
-	}
+	reqIndex := findIndexOf(s.memberNames, string(req.Id.Address))
 
 	s.deliv[reqIndex] = s.deliv[reqIndex] + 1
 
@@ -549,20 +489,7 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 		}
 	}
 
-	reqIndex := -1
-
-	for i := 0; i < len(s.roster.List); i++ {
-
-		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-		reqId, _ := json.Marshal(req.Id)
-
-		if string(rosterIdAtI) == string(reqId) {
-			reqIndex = i
-			break
-		}
-
-	}
+	reqIndex := findIndexOf(s.memberNames, string(req.Id.Address))
 
 	s.deliv[reqIndex] = s.deliv[reqIndex] + 1
 
@@ -637,20 +564,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 		}
 	}
 
-	reqIndex := -1
-
-	for i := 0; i < len(s.roster.List); i++ {
-
-		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-		reqId, _ := json.Marshal(req.Id)
-
-		if string(rosterIdAtI) == string(reqId) {
-			reqIndex = i
-			break
-		}
-
-	}
+	reqIndex := findIndexOf(s.memberNames, string(req.Id.Address))
 
 	s.deliv[reqIndex] = s.deliv[reqIndex] + 1
 
@@ -806,9 +720,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 						if consensusFound {
 							fmt.Printf("Found consensus with random number %d and the consensus property is %s with length %d \n", randomNumber, properConsensus, len(consensusValue))
 							s.tempConsensusNodes = convertStringArraytoNetworkId(consensusValue)
-
 							// set the roster
-
 						} else {
 							fmt.Printf("Did not find consensus\n")
 						}
@@ -819,6 +731,8 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 							if consensusFound {
 								strNodes = consensusValue
+							} else if s.tempConsensusNodes != nil && len(s.tempConsensusNodes) > 0 {
+								strNodes = convertNetworkIdtoStringArray(s.tempConsensusNodes)
 							} else {
 
 								nodes := make([]*network.ServerIdentity, 0)
@@ -832,16 +746,42 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 							}
 							randomNumber := rand.Intn(10000)
 
-							fmt.Printf("%s's initial proposal random number is %d \n", s.ServerIdentity(), randomNumber)
+							fmt.Printf("%s's new proposal random number is %d \n", s.ServerIdentity(), randomNumber)
 
 							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber - 1, IsConsensus: true, ConsensusStepNumber: 0}
 
 						} else {
 							// end of consensus rounds
 							if s.tempConsensusNodes != nil {
-								//fmt.Printf("%s Updated the roster with new set of nodes\n", s.ServerIdentity())
-								fmt.Printf("Initial roster list  is %s\n",s.roster.List)
-								fmt.Printf("Final Consensus is %s\n",s.tempConsensusNodes)
+								fmt.Printf("%s Updated the roster with new set of nodes\n", s.ServerIdentity())
+								s.roster.List = s.tempConsensusNodes
+
+								memberNodes := s.roster.List
+
+								s.majority = len(memberNodes)/2 + 1
+
+								s.name = string(s.ServerIdentity().Address)
+
+								s.memberNames = make([]string, len(s.roster.List))
+
+								for i := 0; i < len(s.roster.List); i++ {
+									s.memberNames[i] = string(s.roster.List[i].Address)
+								}
+
+								newSent := make([][]int, len(s.roster.List))
+								for i := 0; i < len(s.roster.List); i++ {
+									newSent[i] = make([]int, len(s.roster.List))
+									for j := 0; j < len(s.roster.List); j++ {
+										newSent[i][j] = 0
+									}
+								}
+								newDeliv := make([]int, len(s.roster.List))
+								for j := 0; j < len(s.roster.List); j++ {
+									newDeliv[j] = 0
+								}
+
+								s.tempConsensusNodes = nil
+
 							}
 							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), IsConsensus: false}
 						}
@@ -1024,6 +964,8 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		sentLock:  new(sync.Mutex),
 		delivLock: new(sync.Mutex),
+
+		tempConsensusNodes: nil,
 	}
 	if err := s.RegisterHandlers(s.Clock, s.Count, s.InitRequest); err != nil {
 		return nil, errors.New("couldn't register messages")
@@ -1046,19 +988,8 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		// check if this message can be received correctly
 
-		myIndex := -1
-		for i := 0; i < len(s.roster.List); i++ {
+		myIndex := findIndexOf(s.memberNames, s.name)
 
-			rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-			myServerId, _ := json.Marshal(s.ServerIdentity())
-
-			if string(rosterIdAtI) == string(myServerId) {
-				myIndex = i
-				break
-			}
-
-		}
 
 		canDeleiver := true
 
@@ -1098,19 +1029,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		// check if this message can be received correctly
 
-		myIndex := -1
-		for i := 0; i < len(s.roster.List); i++ {
-
-			rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-			myServerId, _ := json.Marshal(s.ServerIdentity())
-
-			if string(rosterIdAtI) == string(myServerId) {
-				myIndex = i
-				break
-			}
-
-		}
+		myIndex := findIndexOf(s.memberNames, s.name)
 
 		canDeleiver := true
 
@@ -1149,19 +1068,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		// check if this message can be received correctly
 
-		myIndex := -1
-		for i := 0; i < len(s.roster.List); i++ {
-
-			rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-			myServerId, _ := json.Marshal(s.ServerIdentity())
-
-			if string(rosterIdAtI) == string(myServerId) {
-				myIndex = i
-				break
-			}
-
-		}
+		myIndex := findIndexOf(s.memberNames, s.name)
 
 		canDeleiver := true
 
@@ -1245,19 +1152,7 @@ func handleBufferedMessages(s *Service) {
 
 	if len(s.bufferedUnwitnessedMessages) > 0 {
 
-		myIndex := -1
-		for i := 0; i < len(s.roster.List); i++ {
-
-			rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-			myServerId, _ := json.Marshal(s.ServerIdentity())
-
-			if string(rosterIdAtI) == string(myServerId) {
-				myIndex = i
-				break
-			}
-
-		}
+		myIndex := findIndexOf(s.memberNames, s.name)
 
 		processedBufferedMessages := make([]int, 0)
 		for k := 0; k < len(s.bufferedUnwitnessedMessages); k++ {
@@ -1296,19 +1191,7 @@ func handleBufferedMessages(s *Service) {
 
 	if len(s.bufferedAckMessages) > 0 {
 
-		myIndex := -1
-		for i := 0; i < len(s.roster.List); i++ {
-
-			rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-			myServerId, _ := json.Marshal(s.ServerIdentity())
-
-			if string(rosterIdAtI) == string(myServerId) {
-				myIndex = i
-				break
-			}
-
-		}
+		myIndex := findIndexOf(s.memberNames, s.name)
 
 		processedBufferedMessages := make([]int, 0)
 		for k := 0; k < len(s.bufferedAckMessages); k++ {
@@ -1347,19 +1230,7 @@ func handleBufferedMessages(s *Service) {
 
 	if len(s.bufferedWitnessedMessages) > 0 {
 
-		myIndex := -1
-		for i := 0; i < len(s.roster.List); i++ {
-
-			rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-
-			myServerId, _ := json.Marshal(s.ServerIdentity())
-
-			if string(rosterIdAtI) == string(myServerId) {
-				myIndex = i
-				break
-			}
-
-		}
+		myIndex := findIndexOf(s.memberNames, s.name)
 
 		processedBufferedMessages := make([]int, 0)
 
