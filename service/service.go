@@ -46,8 +46,9 @@ type Service struct {
 	// We need to embed the ServiceProcessor, so that incoming messages
 	// are correctly handled.
 	*onet.ServiceProcessor
-	roster  *onet.Roster
-	storage *storage
+	roster             *onet.Roster
+	storage            *storage
+	tempConsensusNodes []*network.ServerIdentity
 
 	step     int
 	stepLock *sync.Mutex
@@ -280,11 +281,16 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	strNodes := convertNetworkIdtoStringArray(nodes)
 
-	randomNumber := rand.Intn(10000)
+	nodes = convertStringArraytoNetworkId(strNodes)
 
-	fmt.Printf("%s's initial proposal random number is %d \n", s.ServerIdentity(), randomNumber)
+	s.roster.List= nodes
 
-	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 20, IsConsensus: true, ConsensusStepNumber: 0}
+	//randomNumber := rand.Intn(10000)
+
+	//fmt.Printf("%s's initial proposal random number is %d \n", s.ServerIdentity(), randomNumber)
+
+	//unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 20, IsConsensus: true, ConsensusStepNumber: 0}
+	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), IsConsensus: false}
 
 	broadcastUnwitnessedMessage(memberNodes, s, unwitnessedMessage)
 
@@ -798,9 +804,11 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 						}
 
 						if consensusFound {
-							fmt.Printf("Found consensus with random number %d and the consensus property is %s \n", randomNumber, properConsensus)
+							fmt.Printf("Found consensus with random number %d and the consensus property is %s with length %d \n", randomNumber, properConsensus, len(consensusValue))
+							s.tempConsensusNodes = convertStringArraytoNetworkId(consensusValue)
 
 							// set the roster
+
 						} else {
 							fmt.Printf("Did not find consensus\n")
 						}
@@ -829,6 +837,12 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber - 1, IsConsensus: true, ConsensusStepNumber: 0}
 
 						} else {
+							// end of consensus rounds
+							if s.tempConsensusNodes != nil {
+								//fmt.Printf("%s Updated the roster with new set of nodes\n", s.ServerIdentity())
+								fmt.Printf("Initial roster list  is %s\n",s.roster.List)
+								fmt.Printf("Final Consensus is %s\n",s.tempConsensusNodes)
+							}
 							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), IsConsensus: false}
 						}
 
