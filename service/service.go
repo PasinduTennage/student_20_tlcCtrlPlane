@@ -56,6 +56,8 @@ type Service struct {
 	name        string
 	memberNames []string
 
+	maxNodeCount int
+
 	majority int
 
 	maxTime int
@@ -195,21 +197,17 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 	s.roster = req.SsRoster
 	//fmt.Printf("Roster is set for %s", s.ServerIdentity())
 
-	memberNodes := s.roster.List
+	s.majority = len(s.roster.List)/2 + 1
 
-	s.majority = len(memberNodes)/2 + 1
-
-	s.maxTime = 150
-
-	s.sent = make([][]int, len(s.roster.List))
-	for i := 0; i < len(s.roster.List); i++ {
-		s.sent[i] = make([]int, len(s.roster.List))
-		for j := 0; j < len(s.roster.List); j++ {
+	s.sent = make([][]int, s.maxNodeCount)
+	for i := 0; i < s.maxNodeCount; i++ {
+		s.sent[i] = make([]int, s.maxNodeCount)
+		for j := 0; j < s.maxNodeCount; j++ {
 			s.sent[i][j] = 0
 		}
 	}
-	s.deliv = make([]int, len(s.roster.List))
-	for j := 0; j < len(s.roster.List); j++ {
+	s.deliv = make([]int, s.maxNodeCount)
+	for j := 0; j < s.maxNodeCount; j++ {
 		s.deliv[j] = 0
 	}
 
@@ -219,10 +217,13 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	s.name = string(s.ServerIdentity().Address)
 
-	s.memberNames = make([]string, len(s.roster.List))
+	s.memberNames = make([]string, s.maxNodeCount)
 
 	for i := 0; i < len(s.roster.List); i++ {
 		s.memberNames[i] = string(s.roster.List[i].Address)
+	}
+	for i := len(s.roster.List); i < s.maxNodeCount; i++ {
+		s.memberNames[i] = ""
 	}
 
 	nodes := make([]*network.ServerIdentity, 0)
@@ -234,18 +235,14 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	strNodes := convertNetworkIdtoStringArray(nodes)
 
-	//nodes = convertStringArraytoNetworkId(strNodes)
-	//
-	//s.roster.List = nodes
-
 	randomNumber := rand.Intn(10000)
 
 	fmt.Printf("%s's initial proposal random number is %d \n", s.ServerIdentity(), randomNumber)
 
-	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 20, IsConsensus: true, ConsensusStepNumber: 0}
+	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 20, IsConsensus: true, ConsensusStepNumber: 0}
 	//unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), IsConsensus: false}
 
-	broadcastUnwitnessedMessage(memberNodes, s, unwitnessedMessage)
+	broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
 
 	s.sentUnwitnessMessages[stepNow] = unwitnessedMessage // check syncMaps in go
 
@@ -425,10 +422,10 @@ func max(num1 int, num2 int) int {
 
 func handleUnwitnessedMessage(s *Service, req *template.UnwitnessedMessage) {
 
-	reqSentArray := convertString1DtoInt2D(req.SentArray, len(s.roster.List), len(s.roster.List))
+	reqSentArray := convertString1DtoInt2D(req.SentArray, s.maxNodeCount, s.maxNodeCount)
 
-	for i := 0; i < len(s.roster.List); i++ {
-		for j := 0; j < len(s.roster.List); j++ {
+	for i := 0; i < s.maxNodeCount; i++ {
+		for j := 0; j < s.maxNodeCount; j++ {
 			s.sent[i][j] = max(s.sent[i][j], reqSentArray[i][j])
 		}
 	}
@@ -444,7 +441,7 @@ func handleUnwitnessedMessage(s *Service, req *template.UnwitnessedMessage) {
 	if req.Step <= stepNow {
 
 		s.recievedUnwitnessedMessages[req.Step] = append(s.recievedUnwitnessedMessages[req.Step], req)
-		newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: req, SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List))}
+		newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: req, SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount)}
 		requesterIdentity := req.Id
 		unicastAcknowledgementMessage(requesterIdentity, s, newAck)
 		s.sentAcknowledgementMessages[req.Step] = append(s.sentAcknowledgementMessages[req.Step], newAck)
@@ -481,10 +478,10 @@ func handleUnwitnessedMessage(s *Service, req *template.UnwitnessedMessage) {
 
 func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 
-	reqSentArray := convertString1DtoInt2D(req.SentArray, len(s.roster.List), len(s.roster.List))
+	reqSentArray := convertString1DtoInt2D(req.SentArray, s.maxNodeCount, s.maxNodeCount)
 
-	for i := 0; i < len(s.roster.List); i++ {
-		for j := 0; j < len(s.roster.List); j++ {
+	for i := 0; i < s.maxNodeCount; i++ {
+		for j := 0; j < s.maxNodeCount; j++ {
 			s.sent[i][j] = max(s.sent[i][j], reqSentArray[i][j])
 		}
 	}
@@ -532,17 +529,17 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 				if s.sentUnwitnessMessages[stepNow].IsConsensus == true {
 
 					if s.sentUnwitnessMessages[stepNow].ConsensusStepNumber == 0 {
-						newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), RandomNumber: s.sentUnwitnessMessages[s.step].RandomNumber, NodesProposal: s.sentUnwitnessMessages[s.step].NodesProposal, ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber, IsConsensus: true, ConsensusStepNumber: s.sentUnwitnessMessages[s.step].ConsensusStepNumber}
+						newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), RandomNumber: s.sentUnwitnessMessages[s.step].RandomNumber, NodesProposal: s.sentUnwitnessMessages[s.step].NodesProposal, ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber, IsConsensus: true, ConsensusStepNumber: s.sentUnwitnessMessages[s.step].ConsensusStepNumber}
 					}
 					if s.sentUnwitnessMessages[stepNow].ConsensusStepNumber == 1 {
-						newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), Nodes: s.sentUnwitnessMessages[stepNow].Nodes, ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber, IsConsensus: true, ConsensusStepNumber: s.sentUnwitnessMessages[s.step].ConsensusStepNumber}
+						newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Nodes: s.sentUnwitnessMessages[stepNow].Nodes, ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber, IsConsensus: true, ConsensusStepNumber: s.sentUnwitnessMessages[s.step].ConsensusStepNumber}
 					}
 					if s.sentUnwitnessMessages[stepNow].ConsensusStepNumber == 2 {
-						newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber, IsConsensus: true, ConsensusStepNumber: s.sentUnwitnessMessages[s.step].ConsensusStepNumber}
+						newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber, IsConsensus: true, ConsensusStepNumber: s.sentUnwitnessMessages[s.step].ConsensusStepNumber}
 					}
 
 				} else {
-					newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), IsConsensus: false}
+					newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), IsConsensus: false}
 				}
 
 				broadcastWitnessedMessage(s.roster.List, s, newWitness)
@@ -556,10 +553,10 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 
 func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
-	reqSentArray := convertString1DtoInt2D(req.SentArray, len(s.roster.List), len(s.roster.List))
+	reqSentArray := convertString1DtoInt2D(req.SentArray, s.maxNodeCount, s.maxNodeCount)
 
-	for i := 0; i < len(s.roster.List); i++ {
-		for j := 0; j < len(s.roster.List); j++ {
+	for i := 0; i < s.maxNodeCount; i++ {
+		for j := 0; j < s.maxNodeCount; j++ {
 			s.sent[i][j] = max(s.sent[i][j], reqSentArray[i][j])
 		}
 	}
@@ -626,10 +623,10 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 				if s.sentUnwitnessMessages[stepNow-1].IsConsensus == true {
 
 					if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 0 {
-						unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), Nodes: convertNetworkIdtoStringArray(nodes), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, IsConsensus: true, ConsensusStepNumber: 1}
+						unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Nodes: convertNetworkIdtoStringArray(nodes), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, IsConsensus: true, ConsensusStepNumber: 1}
 					}
 					if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 1 {
-						unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, IsConsensus: true, ConsensusStepNumber: 2}
+						unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, IsConsensus: true, ConsensusStepNumber: 2}
 					}
 					if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 2 {
 						// it's time to take the decision
@@ -748,48 +745,48 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 							fmt.Printf("%s's new proposal random number is %d \n", s.ServerIdentity(), randomNumber)
 
-							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber - 1, IsConsensus: true, ConsensusStepNumber: 0}
+							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber - 1, IsConsensus: true, ConsensusStepNumber: 0}
 
 						} else {
 							// end of consensus rounds
 							if s.tempConsensusNodes != nil {
-								fmt.Printf("%s Updated the roster with new set of nodes\n", s.ServerIdentity())
-								s.roster.List = s.tempConsensusNodes
+								//fmt.Printf("%s Updated the roster with new set of nodes\n", s.ServerIdentity())
+								//s.roster.List = s.tempConsensusNodes
 
-								memberNodes := s.roster.List
+								//memberNodes := s.roster.List
 
-								s.majority = len(memberNodes)/2 + 1
+								//s.majority = len(memberNodes)/2 + 1
 
-								s.name = string(s.ServerIdentity().Address)
+								//s.name = string(s.ServerIdentity().Address)
 
-								s.memberNames = make([]string, len(s.roster.List))
+								//s.memberNames = make([]string, len(s.roster.List))
 
-								for i := 0; i < len(s.roster.List); i++ {
-									s.memberNames[i] = string(s.roster.List[i].Address)
-								}
-
-								newSent := make([][]int, len(s.roster.List))
-								for i := 0; i < len(s.roster.List); i++ {
-									newSent[i] = make([]int, len(s.roster.List))
-									for j := 0; j < len(s.roster.List); j++ {
-										newSent[i][j] = 0
-									}
-								}
-								newDeliv := make([]int, len(s.roster.List))
-								for j := 0; j < len(s.roster.List); j++ {
-									newDeliv[j] = 0
-								}
-
-								s.tempConsensusNodes = nil
+								//for i := 0; i < len(s.roster.List); i++ {
+								//	s.memberNames[i] = string(s.roster.List[i].Address)
+								//}
+								//
+								//newSent := make([][]int, len(s.roster.List))
+								//for i := 0; i < len(s.roster.List); i++ {
+								//	newSent[i] = make([]int, len(s.roster.List))
+								//	for j := 0; j < len(s.roster.List); j++ {
+								//		newSent[i][j] = 0
+								//	}
+								//}
+								//newDeliv := make([]int, len(s.roster.List))
+								//for j := 0; j < len(s.roster.List); j++ {
+								//	newDeliv[j] = 0
+								//}
+								//
+								//s.tempConsensusNodes = nil
 
 							}
-							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), IsConsensus: false}
+							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), IsConsensus: false}
 						}
 
 					}
 
 				} else {
-					unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), IsConsensus: false}
+					unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), IsConsensus: false}
 				}
 
 				if s.roster == nil {
@@ -815,7 +812,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 				unAckedUnwitnessedMessages := s.recievedTempUnwitnessedMessages[stepNow]
 				for _, uauwm := range unAckedUnwitnessedMessages {
 					s.recievedUnwitnessedMessages[uauwm.Step] = append(s.recievedUnwitnessedMessages[uauwm.Step], uauwm)
-					newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: uauwm, SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List))}
+					newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: uauwm, SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount)}
 					requesterIdentity := uauwm.Id
 					unicastAcknowledgementMessage(requesterIdentity, s, newAck)
 					s.sentAcknowledgementMessages[uauwm.Step] = append(s.sentAcknowledgementMessages[uauwm.Step], newAck)
@@ -920,6 +917,10 @@ func newService(c *onet.Context) (onet.Service, error) {
 		step:     0,
 		stepLock: new(sync.Mutex),
 
+		maxTime: 150,
+
+		maxNodeCount: 15,
+
 		sentUnwitnessMessages:     make(map[int]*template.UnwitnessedMessage),
 		sentUnwitnessMessagesLock: new(sync.Mutex),
 
@@ -990,12 +991,11 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		myIndex := findIndexOf(s.memberNames, s.name)
 
-
 		canDeleiver := true
 
-		reqSentArray := convertString1DtoInt2D(req.SentArray, len(s.roster.List), len(s.roster.List))
+		reqSentArray := convertString1DtoInt2D(req.SentArray, s.maxNodeCount, s.maxNodeCount)
 
-		for i := 0; i < len(s.roster.List); i++ {
+		for i := 0; i < s.maxNodeCount; i++ {
 			if s.deliv[i] < reqSentArray[i][myIndex] {
 				canDeleiver = false
 				break
@@ -1033,9 +1033,9 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		canDeleiver := true
 
-		reqSentArray := convertString1DtoInt2D(req.SentArray, len(s.roster.List), len(s.roster.List))
+		reqSentArray := convertString1DtoInt2D(req.SentArray, s.maxNodeCount, s.maxNodeCount)
 
-		for i := 0; i < len(s.roster.List); i++ {
+		for i := 0; i < s.maxNodeCount; i++ {
 			if s.deliv[i] < reqSentArray[i][myIndex] {
 				canDeleiver = false
 				break
@@ -1072,9 +1072,9 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		canDeleiver := true
 
-		reqSentArray := convertString1DtoInt2D(req.SentArray, len(s.roster.List), len(s.roster.List))
+		reqSentArray := convertString1DtoInt2D(req.SentArray, s.maxNodeCount, s.maxNodeCount)
 
-		for i := 0; i < len(s.roster.List); i++ {
+		for i := 0; i < s.maxNodeCount; i++ {
 			if s.deliv[i] < reqSentArray[i][myIndex] {
 				canDeleiver = false
 				break
@@ -1164,9 +1164,9 @@ func handleBufferedMessages(s *Service) {
 			}
 
 			canDeleiver := true
-			reqSentArray := convertString1DtoInt2D(bufferedRequest.SentArray, len(s.roster.List), len(s.roster.List))
+			reqSentArray := convertString1DtoInt2D(bufferedRequest.SentArray, s.maxNodeCount, s.maxNodeCount)
 
-			for i := 0; i < len(s.roster.List); i++ {
+			for i := 0; i < s.maxNodeCount; i++ {
 				if s.deliv[i] < reqSentArray[i][myIndex] {
 					canDeleiver = false
 					break
@@ -1203,9 +1203,9 @@ func handleBufferedMessages(s *Service) {
 			}
 
 			canDeleiver := true
-			reqSentArray := convertString1DtoInt2D(bufferedRequest.SentArray, len(s.roster.List), len(s.roster.List))
+			reqSentArray := convertString1DtoInt2D(bufferedRequest.SentArray, s.maxNodeCount, s.maxNodeCount)
 
-			for i := 0; i < len(s.roster.List); i++ {
+			for i := 0; i < s.maxNodeCount; i++ {
 				if s.deliv[i] < reqSentArray[i][myIndex] {
 					canDeleiver = false
 					break
@@ -1243,9 +1243,9 @@ func handleBufferedMessages(s *Service) {
 			}
 
 			canDeleiver := true
-			reqSentArray := convertString1DtoInt2D(bufferedRequest.SentArray, len(s.roster.List), len(s.roster.List))
+			reqSentArray := convertString1DtoInt2D(bufferedRequest.SentArray, s.maxNodeCount, s.maxNodeCount)
 
-			for i := 0; i < len(s.roster.List); i++ {
+			for i := 0; i < s.maxNodeCount; i++ {
 				if s.deliv[i] < reqSentArray[i][myIndex] {
 					canDeleiver = false
 					break
