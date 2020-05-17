@@ -239,7 +239,7 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	fmt.Printf("%s's initial proposal random number is %d \n", s.ServerIdentity(), randomNumber)
 
-	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 20, IsConsensus: true, ConsensusStepNumber: 0}
+	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 30, IsConsensus: true, ConsensusStepNumber: 0}
 	//unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), IsConsensus: false}
 
 	broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
@@ -750,34 +750,35 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 						} else {
 							// end of consensus rounds
 							if s.tempConsensusNodes != nil {
-								//fmt.Printf("%s Updated the roster with new set of nodes\n", s.ServerIdentity())
-								//s.roster.List = s.tempConsensusNodes
+								fmt.Printf("%s Updated the roster with new set of nodes\n", s.ServerIdentity())
 
-								//memberNodes := s.roster.List
+								s.roster.List = s.tempConsensusNodes
 
-								//s.majority = len(memberNodes)/2 + 1
+								s.majority = len(s.roster.List)/2 + 1
 
-								//s.name = string(s.ServerIdentity().Address)
+								s.name = string(s.ServerIdentity().Address)
 
-								//s.memberNames = make([]string, len(s.roster.List))
 
-								//for i := 0; i < len(s.roster.List); i++ {
-								//	s.memberNames[i] = string(s.roster.List[i].Address)
-								//}
-								//
-								//newSent := make([][]int, len(s.roster.List))
-								//for i := 0; i < len(s.roster.List); i++ {
-								//	newSent[i] = make([]int, len(s.roster.List))
-								//	for j := 0; j < len(s.roster.List); j++ {
-								//		newSent[i][j] = 0
-								//	}
-								//}
-								//newDeliv := make([]int, len(s.roster.List))
-								//for j := 0; j < len(s.roster.List); j++ {
-								//	newDeliv[j] = 0
-								//}
-								//
-								//s.tempConsensusNodes = nil
+								for i := 0; i < len(s.roster.List); i++ {
+									isNewNode:= true
+									for j:=0; j< len(s.memberNames); j++{
+										if s.memberNames[j]==string(s.roster.List[i].Address){
+											isNewNode = false
+											break
+										}
+									}
+									if isNewNode{
+										for j:=0; j< len(s.memberNames); j++{
+											if s.memberNames[j]==""{
+												s.memberNames[j] = string(s.roster.List[i].Address)
+												break
+											}
+										}
+									}
+
+								}
+
+								s.tempConsensusNodes = nil
 
 							}
 							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), IsConsensus: false}
@@ -917,9 +918,9 @@ func newService(c *onet.Context) (onet.Service, error) {
 		step:     0,
 		stepLock: new(sync.Mutex),
 
-		maxTime: 150,
+		maxTime: 170,
 
-		maxNodeCount: 15,
+		maxNodeCount: 16,
 
 		sentUnwitnessMessages:     make(map[int]*template.UnwitnessedMessage),
 		sentUnwitnessMessagesLock: new(sync.Mutex),
