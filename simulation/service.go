@@ -64,6 +64,7 @@ func (s *SimulationService) Node(config *onet.SimulationConfig) error {
 	if err != nil {
 		return err
 	}
+
 	return s.SimulationBFTree.Node(config)
 
 }
@@ -71,8 +72,8 @@ func (s *SimulationService) Node(config *onet.SimulationConfig) error {
 // Run is used on the destination machines and runs a number of
 // rounds
 func (s *SimulationService) Run(config *onet.SimulationConfig) error {
-	size := config.Tree.Size()
-	log.Lvl2("Size is:", size, "rounds:", s.Rounds)
+	//size := config.Tree.Size()
+	//log.Lvl2("Size is:", size, "rounds:", s.Rounds)
 	//c := template.NewClient()
 	//for round := 0; round < 1; round++ {
 	//	log.Lvl1("Starting round", round)
@@ -84,6 +85,6 @@ func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 	//	}
 	//	round.Record()
 	//}
-	time.Sleep(100 * time.Second)
+	time.Sleep(10 * time.Second)
 	return nil
 }

@@ -195,25 +195,23 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 	s.stepLock.Lock()
 
 	s.roster = req.SsRoster
-	//fmt.Printf("Roster is set for %s", s.ServerIdentity())
 
 	s.majority = len(s.roster.List)/2 + 1
 
 	s.sent = make([][]int, s.maxNodeCount)
+
 	for i := 0; i < s.maxNodeCount; i++ {
 		s.sent[i] = make([]int, s.maxNodeCount)
 		for j := 0; j < s.maxNodeCount; j++ {
 			s.sent[i][j] = 0
 		}
 	}
+
 	s.deliv = make([]int, s.maxNodeCount)
+
 	for j := 0; j < s.maxNodeCount; j++ {
 		s.deliv[j] = 0
 	}
-
-	time.Sleep(2 * time.Second)
-
-	stepNow := s.step
 
 	s.name = string(s.ServerIdentity().Address)
 
@@ -225,6 +223,8 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 	for i := len(s.roster.List); i < s.maxNodeCount; i++ {
 		s.memberNames[i] = ""
 	}
+
+	time.Sleep(2 * time.Second)
 
 	nodes := make([]*network.ServerIdentity, 0)
 
@@ -239,12 +239,12 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	fmt.Printf("%s's initial proposal random number is %d \n", s.ServerIdentity(), randomNumber)
 
-	unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 30, IsConsensus: true, ConsensusStepNumber: 0}
+	unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 30, IsConsensus: true, ConsensusStepNumber: 0}
 	//unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), IsConsensus: false}
 
 	broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
 
-	s.sentUnwitnessMessages[stepNow] = unwitnessedMessage // check syncMaps in go
+	s.sentUnwitnessMessages[s.step] = unwitnessedMessage // check syncMaps in go
 
 	return &template.InitResponse{}, nil
 }
@@ -758,18 +758,17 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 								s.name = string(s.ServerIdentity().Address)
 
-
 								for i := 0; i < len(s.roster.List); i++ {
-									isNewNode:= true
-									for j:=0; j< len(s.memberNames); j++{
-										if s.memberNames[j]==string(s.roster.List[i].Address){
+									isNewNode := true
+									for j := 0; j < len(s.memberNames); j++ {
+										if s.memberNames[j] == string(s.roster.List[i].Address) {
 											isNewNode = false
 											break
 										}
 									}
-									if isNewNode{
-										for j:=0; j< len(s.memberNames); j++{
-											if s.memberNames[j]==""{
+									if isNewNode {
+										for j := 0; j < len(s.memberNames); j++ {
+											if s.memberNames[j] == "" {
 												s.memberNames[j] = string(s.roster.List[i].Address)
 												break
 											}
