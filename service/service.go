@@ -46,9 +46,13 @@ type Service struct {
 	// We need to embed the ServiceProcessor, so that incoming messages
 	// are correctly handled.
 	*onet.ServiceProcessor
-	roster             *onet.Roster
-	storage            *storage
+	roster *onet.Roster
+
+	storage *storage
+
 	tempConsensusNodes []*network.ServerIdentity
+
+	memberNodes []*network.ServerIdentity
 
 	step     int
 	stepLock *sync.Mutex
@@ -196,7 +200,9 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	s.roster = req.SsRoster
 
-	s.majority = len(s.roster.List)/2 + 1
+	s.memberNodes = s.roster.List
+
+	s.majority = len(s.memberNodes)/2 + 1
 
 	s.sent = make([][]int, s.maxNodeCount)
 
@@ -217,10 +223,10 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	s.memberNames = make([]string, s.maxNodeCount)
 
-	for i := 0; i < len(s.roster.List); i++ {
-		s.memberNames[i] = string(s.roster.List[i].Address)
+	for i := 0; i < len(s.memberNodes); i++ {
+		s.memberNames[i] = string(s.memberNodes[i].Address)
 	}
-	for i := len(s.roster.List); i < s.maxNodeCount; i++ {
+	for i := len(s.memberNodes); i < s.maxNodeCount; i++ {
 		s.memberNames[i] = ""
 	}
 
@@ -228,7 +234,7 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	nodes := make([]*network.ServerIdentity, 0)
 
-	for _, node := range s.roster.List {
+	for _, node := range s.memberNodes {
 		nodes = append(nodes, node)
 
 	}
@@ -240,9 +246,8 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 	fmt.Printf("%s's initial proposal random number is %d \n", s.ServerIdentity(), randomNumber)
 
 	unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 30, IsConsensus: true, ConsensusStepNumber: 0}
-	//unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, len(s.roster.List), len(s.roster.List)), IsConsensus: false}
 
-	broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
+	broadcastUnwitnessedMessage(s.memberNodes, s, unwitnessedMessage)
 
 	s.sentUnwitnessMessages[s.step] = unwitnessedMessage // check syncMaps in go
 
@@ -542,7 +547,7 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 					newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), IsConsensus: false}
 				}
 
-				broadcastWitnessedMessage(s.roster.List, s, newWitness)
+				broadcastWitnessedMessage(s.memberNodes, s, newWitness)
 				s.sentThresholdWitnessedMessages[stepNow] = newWitness
 				//fmt.Printf("%s at %d broadcast witnessed with step %d \n", s.ServerIdentity(), s.step, newWitness.Step)
 			}
@@ -734,7 +739,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 								nodes := make([]*network.ServerIdentity, 0)
 
-								for _, node := range s.roster.List {
+								for _, node := range s.memberNodes {
 									nodes = append(nodes, node)
 
 								}
@@ -752,16 +757,16 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 							if s.tempConsensusNodes != nil {
 								fmt.Printf("%s Updated the roster with new set of nodes\n", s.ServerIdentity())
 
-								s.roster.List = s.tempConsensusNodes
+								s.memberNodes = s.tempConsensusNodes
 
-								s.majority = len(s.roster.List)/2 + 1
+								s.majority = len(s.memberNodes)/2 + 1
 
 								s.name = string(s.ServerIdentity().Address)
 
-								for i := 0; i < len(s.roster.List); i++ {
+								for i := 0; i < len(s.memberNodes); i++ {
 									isNewNode := true
 									for j := 0; j < len(s.memberNames); j++ {
-										if s.memberNames[j] == string(s.roster.List[i].Address) {
+										if s.memberNames[j] == string(s.memberNodes[i].Address) {
 											isNewNode = false
 											break
 										}
@@ -769,7 +774,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 									if isNewNode {
 										for j := 0; j < len(s.memberNames); j++ {
 											if s.memberNames[j] == "" {
-												s.memberNames[j] = string(s.roster.List[i].Address)
+												s.memberNames[j] = string(s.memberNodes[i].Address)
 												break
 											}
 										}
@@ -801,7 +806,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 				value, ok := s.sentUnwitnessMessages[stepNow]
 
 				if !ok {
-					broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
+					broadcastUnwitnessedMessage(s.memberNodes, s, unwitnessedMessage)
 					s.sentUnwitnessMessages[stepNow] = unwitnessedMessage
 					//fmt.Printf("%s at %d broadcast unwitnessed with step %d \n", s.ServerIdentity(), s.step, s.step)
 				} else {
