@@ -56,13 +56,15 @@ func (c *Client) Count(si *network.ServerIdentity) (int, error) {
 	return reply.Count, nil
 }
 
-//// InitRequest will return the number of times `Clock` has been called on this
-//// service-node.
-//func (c *Client) Count(si *network.ServerIdentity) (int, error) {
-//	reply := &CountReply{}
-//	err := c.SendProtobuf(si, &Count{}, reply)
-//	if err != nil {
-//		return -1, err
-//	}
-//	return reply.Count, nil
-//}
+// SetGenesisSignersRequest sends a message to a service to set genesis Request
+func (c *Client) SetGenesisSignersRequest(dst *network.ServerIdentity, nodes []string) (*GenesisNodesResponse, error) {
+	serviceReq := &GenesisNodesRequest{
+		Nodes: nodes,
+	}
+	reply := &GenesisNodesResponse{}
+	err := c.SendProtobuf(dst, serviceReq, reply)
+	if err != nil {
+		return nil, err
+	}
+	return reply, nil
+}

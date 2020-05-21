@@ -1,11 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"github.com/BurntSushi/toml"
 	"github.com/dedis/cothority_template"
-	"github.com/dedis/cothority_template/service"
 	"go.dedis.ch/onet/v3"
 	"go.dedis.ch/onet/v3/log"
+	"go.dedis.ch/onet/v3/network"
 	"time"
 )
 
@@ -45,6 +46,15 @@ func (s *SimulationService) Setup(dir string, hosts []string) (
 	return sc, nil
 }
 
+func convertNetworkIdtoStringArray(nodeIds []*network.ServerIdentity) []string {
+	stringArray := make([]string, len(nodeIds))
+	for i := 0; i < len(nodeIds); i++ {
+		jsonNodeId, _ := json.Marshal(nodeIds[i])
+		stringArray[i] = string(jsonNodeId)
+	}
+	return stringArray
+}
+
 // Node can be used to initialize each node before it will be run
 // by the server. Here we call the 'Node'-method of the
 // SimulationBFTree structure which will load the roster- and the
@@ -55,15 +65,6 @@ func (s *SimulationService) Node(config *onet.SimulationConfig) error {
 		log.Fatal("Didn't find this node in roster")
 	}
 	log.Lvl3("Initializing node-index", index)
-	myService := config.GetService(template.ServiceName).(*service.Service)
-	//fmt.Printf("----------------Invoking the InitRequest-------------------- \n")
-	serviceReq := &template.InitRequest{
-		SsRoster: config.Roster,
-	}
-	_, err := myService.InitRequest(serviceReq)
-	if err != nil {
-		return err
-	}
 
 	return s.SimulationBFTree.Node(config)
 
@@ -72,6 +73,27 @@ func (s *SimulationService) Node(config *onet.SimulationConfig) error {
 // Run is used on the destination machines and runs a number of
 // rounds
 func (s *SimulationService) Run(config *onet.SimulationConfig) error {
+	nodes := make([]*network.ServerIdentity, 5)
+	clients := make([]*template.Client, 5)
+
+	for i := 0; i < 5; i++ {
+		clients[i] = template.NewClient()
+		nodes[i] = config.Roster.List[i]
+	}
+
+	strNodes := convertNetworkIdtoStringArray(nodes)
+
+	//serviceReq := &template.InitRequest{
+	//	Nodes: convertNetworkIdtoStringArray(nodes),
+	//}
+	//_, err := myService.InitRequest(serviceReq)
+	//if err != nil {
+	//	return err
+	//}
+
+	for i := 0; i < 5; i++ {
+		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], strNodes)
+	}
 	//size := config.Tree.Size()
 	//log.Lvl2("Size is:", size, "rounds:", s.Rounds)
 	//c := template.NewClient()

@@ -46,7 +46,6 @@ type Service struct {
 	// We need to embed the ServiceProcessor, so that incoming messages
 	// are correctly handled.
 	*onet.ServiceProcessor
-	roster *onet.Roster
 
 	storage *storage
 
@@ -198,9 +197,35 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 	defer s.stepLock.Unlock()
 	s.stepLock.Lock()
 
-	s.roster = req.SsRoster
+	nodes := make([]*network.ServerIdentity, 0)
 
-	s.memberNodes = s.roster.List
+	for _, node := range s.memberNodes {
+		nodes = append(nodes, node)
+
+	}
+
+	strNodes := convertNetworkIdtoStringArray(nodes)
+
+	randomNumber := rand.Intn(10000)
+
+	fmt.Printf("%s's initial proposal random number is %d \n", s.ServerIdentity(), randomNumber)
+
+	unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 30, IsConsensus: true, ConsensusStepNumber: 0}
+
+	broadcastUnwitnessedMessage(s.memberNodes, s, unwitnessedMessage)
+
+	s.sentUnwitnessMessages[s.step] = unwitnessedMessage // check syncMaps in go
+
+	return &template.InitResponse{}, nil
+
+}
+
+func (s *Service) SetGenesisSet(req *template.GenesisNodesRequest) (*template.GenesisNodesResponse, error) {
+
+	defer s.stepLock.Unlock()
+	s.stepLock.Lock()
+
+	s.memberNodes = convertStringArraytoNetworkId(req.Nodes)
 
 	s.majority = len(s.memberNodes)/2 + 1
 
@@ -232,26 +257,9 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	time.Sleep(2 * time.Second)
 
-	nodes := make([]*network.ServerIdentity, 0)
+	fmt.Printf("%s set the genesis set \n", s.name)
 
-	for _, node := range s.memberNodes {
-		nodes = append(nodes, node)
-
-	}
-
-	strNodes := convertNetworkIdtoStringArray(nodes)
-
-	randomNumber := rand.Intn(10000)
-
-	fmt.Printf("%s's initial proposal random number is %d \n", s.ServerIdentity(), randomNumber)
-
-	unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 30, IsConsensus: true, ConsensusStepNumber: 0}
-
-	broadcastUnwitnessedMessage(s.memberNodes, s, unwitnessedMessage)
-
-	s.sentUnwitnessMessages[s.step] = unwitnessedMessage // check syncMaps in go
-
-	return &template.InitResponse{}, nil
+	return &template.GenesisNodesResponse{}, nil
 }
 
 // Clock starts a template-protocol and returns the run-time.
@@ -794,11 +802,6 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), IsConsensus: false}
 				}
 
-				if s.roster == nil {
-					//fmt.Printf("%s's roster is nil \n", s.ServerIdentity())
-					return
-				}
-
 				if stepNow > s.maxTime {
 					return
 				}
@@ -973,7 +976,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		tempConsensusNodes: nil,
 	}
-	if err := s.RegisterHandlers(s.Clock, s.Count, s.InitRequest); err != nil {
+	if err := s.RegisterHandlers(s.Clock, s.Count, s.SetGenesisSet); err != nil {
 		return nil, errors.New("couldn't register messages")
 	}
 	if err := s.tryLoad(); err != nil {

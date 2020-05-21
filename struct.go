@@ -48,11 +48,11 @@ type UnwitnessedMessage struct {
 	Id                   *network.ServerIdentity
 	SentArray            []string
 	RandomNumber         int
-	NodesProposal        [] string
-	Nodes                [] string
+	NodesProposal        []string
+	Nodes                []string
 	ConsensusRoundNumber int
 	IsConsensus          bool
-	ConsensusStepNumber int
+	ConsensusStepNumber  int
 }
 
 type WitnessedMessage struct {
@@ -61,8 +61,8 @@ type WitnessedMessage struct {
 	//acknowledgeSet list.List how to define a list
 	SentArray            []string
 	RandomNumber         int
-	NodesProposal        [] string
-	Nodes                [] string
+	NodesProposal        []string
+	Nodes                []string
 	ConsensusRoundNumber int
 	IsConsensus          bool
 	ConsensusStepNumber  int
@@ -75,11 +75,18 @@ type AcknowledgementMessage struct {
 }
 
 type InitRequest struct {
-	SsRoster *onet.Roster
 }
 
 // SignatureResponse is what the Cosi service will reply to clients.
 type InitResponse struct {
+}
+
+type GenesisNodesRequest struct {
+	Nodes []string
+}
+
+// SignatureResponse is what the Cosi service will reply to clients.
+type GenesisNodesResponse struct {
 }
 
 type CatchUpMessage struct {
