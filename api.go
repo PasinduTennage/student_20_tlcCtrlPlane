@@ -68,3 +68,13 @@ func (c *Client) SetGenesisSignersRequest(dst *network.ServerIdentity, nodes []s
 	}
 	return reply, nil
 }
+
+func (c *Client) SendInitRequest(dst *network.ServerIdentity) (*InitResponse, error) {
+	serviceReq := &InitRequest{}
+	reply := &InitResponse{}
+	err := c.SendProtobuf(dst, serviceReq, reply)
+	if err != nil {
+		return nil, err
+	}
+	return reply, nil
+}

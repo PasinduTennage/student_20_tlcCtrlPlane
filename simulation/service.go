@@ -94,6 +94,11 @@ func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 	for i := 0; i < 5; i++ {
 		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], strNodes)
 	}
+
+	for i := 0; i < 5; i++ {
+		_, _ = clients[i].SendInitRequest(config.Roster.List[i])
+	}
+
 	//size := config.Tree.Size()
 	//log.Lvl2("Size is:", size, "rounds:", s.Rounds)
 	//c := template.NewClient()

@@ -197,12 +197,7 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 	defer s.stepLock.Unlock()
 	s.stepLock.Lock()
 
-	nodes := make([]*network.ServerIdentity, 0)
-
-	for _, node := range s.memberNodes {
-		nodes = append(nodes, node)
-
-	}
+	nodes := s.memberNodes
 
 	strNodes := convertNetworkIdtoStringArray(nodes)
 
@@ -227,7 +222,7 @@ func (s *Service) SetGenesisSet(req *template.GenesisNodesRequest) (*template.Ge
 
 	s.memberNodes = convertStringArraytoNetworkId(req.Nodes)
 
-	s.majority = len(s.memberNodes)/2 + 1
+	s.majority = len(s.memberNodes)
 
 	s.sent = make([][]int, s.maxNodeCount)
 
@@ -254,8 +249,6 @@ func (s *Service) SetGenesisSet(req *template.GenesisNodesRequest) (*template.Ge
 	for i := len(s.memberNodes); i < s.maxNodeCount; i++ {
 		s.memberNames[i] = ""
 	}
-
-	time.Sleep(2 * time.Second)
 
 	fmt.Printf("%s set the genesis set \n", s.name)
 
@@ -976,7 +969,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		tempConsensusNodes: nil,
 	}
-	if err := s.RegisterHandlers(s.Clock, s.Count, s.SetGenesisSet); err != nil {
+	if err := s.RegisterHandlers(s.Clock, s.Count, s.SetGenesisSet, s.InitRequest); err != nil {
 		return nil, errors.New("couldn't register messages")
 	}
 	if err := s.tryLoad(); err != nil {
