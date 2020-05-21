@@ -620,6 +620,9 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 				//fmt.Printf("The step threshold witnessed message array is %s for %d \n", s.recievedThresholdStepWitnessedMessages[stepNow], stepNow)
 
 				s.step = s.step + 1
+				if s.step == 1 {
+					s.majority = len(s.memberNodes)/2+1
+				}
 				stepNow = s.step
 
 				fmt.Printf("%s increased time step to %d \n", s.ServerIdentity(), stepNow)
@@ -918,7 +921,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 		step:     0,
 		stepLock: new(sync.Mutex),
 
-		maxTime: 170,
+		maxTime: 200,
 
 		maxNodeCount: 16,
 
