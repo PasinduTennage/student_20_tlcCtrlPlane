@@ -74,24 +74,19 @@ func (s *SimulationService) Node(config *onet.SimulationConfig) error {
 // rounds
 func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 	nodes := make([]*network.ServerIdentity, 5)
-	clients := make([]*template.Client, 5)
+	clients := make([]*template.Client, len(config.Roster.List))
+
+	for i := 0; i < len(config.Roster.List); i++ {
+		clients[i] = template.NewClient()
+	}
 
 	for i := 0; i < 5; i++ {
-		clients[i] = template.NewClient()
 		nodes[i] = config.Roster.List[i]
 	}
 
 	strNodes := convertNetworkIdtoStringArray(nodes)
 
-	//serviceReq := &template.InitRequest{
-	//	Nodes: convertNetworkIdtoStringArray(nodes),
-	//}
-	//_, err := myService.InitRequest(serviceReq)
-	//if err != nil {
-	//	return err
-	//}
-
-	for i := 0; i < 5; i++ {
+	for i := 0; i < len(config.Roster.List); i++ {
 		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], strNodes)
 	}
 

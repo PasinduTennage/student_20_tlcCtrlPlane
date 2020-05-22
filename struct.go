@@ -51,8 +51,12 @@ type UnwitnessedMessage struct {
 	NodesProposal        []string
 	Nodes                []string
 	ConsensusRoundNumber int
-	IsConsensus          bool
-	ConsensusStepNumber  int
+
+	ConsensusStepNumber int
+	PingDistances       []string
+	PingMetrix          []string
+
+	Messagetype int // 0: tlc, 1: ping distances, 2: nodes consensus, 3: ping consensus
 }
 
 type WitnessedMessage struct {
@@ -64,8 +68,11 @@ type WitnessedMessage struct {
 	NodesProposal        []string
 	Nodes                []string
 	ConsensusRoundNumber int
-	IsConsensus          bool
-	ConsensusStepNumber  int
+
+	ConsensusStepNumber int
+	PingDistances       []string
+	PingMetrix          []string
+	Messagetype         int
 }
 
 type AcknowledgementMessage struct {
