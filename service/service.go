@@ -1,33 +1,23 @@
 package service
 
-/*
-The service.go defines what to do for each API-call. This part of the service
-runs on the node.
-*/
-
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/dedis/cothority_template"
-	"github.com/dedis/cothority_template/protocol"
 	"go.dedis.ch/onet/v3"
 	"go.dedis.ch/onet/v3/log"
 	"go.dedis.ch/onet/v3/network"
 	"math/rand"
 	"strconv"
 	"sync"
-	"time"
 )
-
-//var Name = template.ServiceName
 
 var unwitnessedMessageMsgID network.MessageTypeID
 var witnessedMessageMsgID network.MessageTypeID
 var acknowledgementMessageMsgID network.MessageTypeID
 var catchUpMessageID network.MessageTypeID
 
-// Used for tests
 var templateID onet.ServiceID
 
 func init() {
@@ -41,7 +31,6 @@ func init() {
 	catchUpMessageID = network.RegisterMessage(&template.CatchUpMessage{})
 }
 
-// Service is our template-service
 type Service struct {
 	// We need to embed the ServiceProcessor, so that incoming messages
 	// are correctly handled.
@@ -55,13 +44,14 @@ type Service struct {
 
 	pingConsensus [][]int
 
-	memberNodes []*network.ServerIdentity
+	admissionCommittee []*network.ServerIdentity
+	tempNewCommittee   []*network.ServerIdentity
 
 	step     int
 	stepLock *sync.Mutex
 
-	name        string
-	memberNames []string
+	name                  string
+	vectorClockMemberList []string
 
 	maxNodeCount int
 
@@ -118,11 +108,8 @@ type Service struct {
 	bufferedCatchupMessagesLock *sync.Mutex
 }
 
-// storageID reflects the data we're storing - we could store more
-// than one structure.
 var storageID = []byte("main")
 
-// storage is used to save our data.
 type storage struct {
 	Count int
 	sync.Mutex
@@ -141,8 +128,8 @@ func broadcastUnwitnessedMessage(memberNodes []*network.ServerIdentity, s *Servi
 	for _, node := range memberNodes {
 		e := s.SendRaw(node, message)
 
-		senderIndex := findIndexOf(s.memberNames, s.name)
-		receiverIndex := findIndexOf(s.memberNames, string(node.Address))
+		senderIndex := findIndexOf(s.vectorClockMemberList, s.name)
+		receiverIndex := findIndexOf(s.vectorClockMemberList, string(node.Address))
 
 		s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
 
@@ -156,8 +143,8 @@ func broadcastWitnessedMessage(memberNodes []*network.ServerIdentity, s *Service
 	for _, node := range memberNodes {
 		e := s.SendRaw(node, message)
 
-		senderIndex := findIndexOf(s.memberNames, s.name)
-		receiverIndex := findIndexOf(s.memberNames, string(node.Address))
+		senderIndex := findIndexOf(s.vectorClockMemberList, s.name)
+		receiverIndex := findIndexOf(s.vectorClockMemberList, string(node.Address))
 
 		s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
 
@@ -170,8 +157,8 @@ func broadcastWitnessedMessage(memberNodes []*network.ServerIdentity, s *Service
 func unicastAcknowledgementMessage(memberNode *network.ServerIdentity, s *Service, message *template.AcknowledgementMessage) {
 	e := s.SendRaw(memberNode, message)
 
-	senderIndex := findIndexOf(s.memberNames, s.name)
-	receiverIndex := findIndexOf(s.memberNames, string(memberNode.Address))
+	senderIndex := findIndexOf(s.vectorClockMemberList, s.name)
+	receiverIndex := findIndexOf(s.vectorClockMemberList, string(memberNode.Address))
 
 	s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
 
@@ -181,21 +168,6 @@ func unicastAcknowledgementMessage(memberNode *network.ServerIdentity, s *Servic
 
 }
 
-//func unicastCatchUpMessage(memberNode *network.ServerIdentity, s *Service, message *template.CatchUpMessage) {
-//e := s.SendRaw(memberNode, message)
-//
-//	senderIndex := findIndexOf(s.memberNames, s.name)
-//receiverIndex := findIndexOf(s.memberNames, string(memberNode.Address))
-//
-
-//	s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
-//
-//	if e != nil {
-//		panic(e)
-//	}
-//
-//}
-
 func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse, error) {
 
 	defer s.stepLock.Unlock()
@@ -203,7 +175,7 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
 
-	broadcastUnwitnessedMessage(s.memberNodes, s, unwitnessedMessage)
+	broadcastUnwitnessedMessage(s.admissionCommittee, s, unwitnessedMessage)
 
 	s.sentUnwitnessMessages[s.step] = unwitnessedMessage // check syncMaps in go
 
@@ -216,9 +188,9 @@ func (s *Service) SetGenesisSet(req *template.GenesisNodesRequest) (*template.Ge
 	defer s.stepLock.Unlock()
 	s.stepLock.Lock()
 
-	s.memberNodes = convertStringArraytoNetworkId(req.Nodes)
+	s.admissionCommittee = convertStringArraytoNetworkId(req.Nodes)
 
-	s.majority = len(s.memberNodes)
+	s.majority = len(s.admissionCommittee)
 
 	s.sent = make([][]int, s.maxNodeCount)
 
@@ -237,13 +209,13 @@ func (s *Service) SetGenesisSet(req *template.GenesisNodesRequest) (*template.Ge
 
 	s.name = string(s.ServerIdentity().Address)
 
-	s.memberNames = make([]string, s.maxNodeCount)
+	s.vectorClockMemberList = make([]string, s.maxNodeCount)
 
-	for i := 0; i < len(s.memberNodes); i++ {
-		s.memberNames[i] = string(s.memberNodes[i].Address)
+	for i := 0; i < len(s.admissionCommittee); i++ {
+		s.vectorClockMemberList[i] = string(s.admissionCommittee[i].Address)
 	}
-	for i := len(s.memberNodes); i < s.maxNodeCount; i++ {
-		s.memberNames[i] = ""
+	for i := len(s.admissionCommittee); i < s.maxNodeCount; i++ {
+		s.vectorClockMemberList[i] = ""
 	}
 
 	fmt.Printf("%s set the genesis set \n", s.name)
@@ -251,49 +223,11 @@ func (s *Service) SetGenesisSet(req *template.GenesisNodesRequest) (*template.Ge
 	return &template.GenesisNodesResponse{}, nil
 }
 
-// Clock starts a template-protocol and returns the run-time.
-func (s *Service) Clock(req *template.Clock) (*template.ClockReply, error) {
-	s.storage.Lock()
-	s.storage.Count++
-	s.storage.Unlock()
-	s.save()
-	tree := req.Roster.GenerateNaryTreeWithRoot(2, s.ServerIdentity())
-	if tree == nil {
-		return nil, errors.New("couldn't create tree")
-	}
-	pi, err := s.CreateProtocol(protocol.Name, tree)
-	if err != nil {
-		return nil, err
-	}
-	start := time.Now()
-	pi.Start()
-	resp := &template.ClockReply{
-		Children: <-pi.(*protocol.TemplateProtocol).ChildCount,
-	}
-	resp.Time = time.Now().Sub(start).Seconds()
-	return resp, nil
-}
-
-// Count returns the number of instantiations of the protocol.
-func (s *Service) Count(req *template.Count) (*template.CountReply, error) {
-	s.storage.Lock()
-	defer s.storage.Unlock()
-	return &template.CountReply{Count: s.storage.Count}, nil
-}
-
-// NewProtocol is called on all nodes of a Tree (except the root, since it is
-// the one starting the protocol) so it's the Service that will be called to
-// generate the PI on all others node.
-// If you use CreateProtocolOnet, this will not be called, as the Onet will
-// instantiate the protocol on its own. If you need more control at the
-// instantiation of the protocol, use CreateProtocolService, and you can
-// give some extra-configuration to your protocol in here.
 func (s *Service) NewProtocol(tn *onet.TreeNodeInstance, conf *onet.GenericConfig) (onet.ProtocolInstance, error) {
 	log.Lvl3("Not templated yet")
 	return nil, nil
 }
 
-// saves all data.
 func (s *Service) save() {
 	s.storage.Lock()
 	defer s.storage.Unlock()
@@ -303,8 +237,6 @@ func (s *Service) save() {
 	}
 }
 
-// Tries to load the configuration and updates the data in the service
-// if it finds a valid config-file.
 func (s *Service) tryLoad() error {
 	s.storage = &storage{}
 	msg, err := s.Load(storageID)
@@ -364,9 +296,7 @@ func convertStringArraytoNetworkId(array []string) []*network.ServerIdentity {
 		byteArray := []byte(array[i])
 		var m network.ServerIdentity
 		json.Unmarshal(byteArray, &m)
-
 		IdArray[i] = &m
-
 	}
 
 	return IdArray
@@ -380,26 +310,6 @@ func findGlobalMaxRandomNumber(messages []*template.WitnessedMessage) int {
 		}
 	}
 	return globalMax
-}
-
-func findGlobalMaxNumberOfNodes(messages []*template.WitnessedMessage) int {
-	globalMax := 0
-	for i := 0; i < len(messages); i++ {
-		if len(messages[i].NodesProposal) > globalMax {
-			globalMax = len(messages[i].NodesProposal)
-		}
-	}
-	return globalMax
-}
-
-func findValueWithMaxKey(rowMap map[int][]string) (int, []string) {
-	maxKey := 0
-	for n := range rowMap {
-		if n > maxKey {
-			maxKey = n
-		}
-	}
-	return maxKey, rowMap[maxKey]
 }
 
 func unique(stringSlice []string) []string {
@@ -422,7 +332,7 @@ func max(num1 int, num2 int) int {
 	}
 }
 
-func convertInttoStringArray(values []int) []string {
+func convertIntArraytoStringArray(values []int) []string {
 	stringArray := make([]string, len(values))
 	for i := 0; i < len(values); i++ {
 		stringArray[i] = string(values[i])
@@ -430,7 +340,7 @@ func convertInttoStringArray(values []int) []string {
 	return stringArray
 }
 
-func convertStringtoIntArray(values []string) []int {
+func convertStringArraytoIntArray(values []string) []int {
 	intValues := make([]int, len(values))
 	for i := 0; i < len(values); i++ {
 		intValues[i], _ = strconv.Atoi(values[i])
@@ -448,11 +358,9 @@ func handleUnwitnessedMessage(s *Service, req *template.UnwitnessedMessage) {
 		}
 	}
 
-	reqIndex := findIndexOf(s.memberNames, string(req.Id.Address))
+	reqIndex := findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
 
 	s.deliv[reqIndex] = s.deliv[reqIndex] + 1
-
-	//fmt.Printf("%s at %d received unwitnessed from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
 
 	stepNow := s.step
 
@@ -463,32 +371,8 @@ func handleUnwitnessedMessage(s *Service, req *template.UnwitnessedMessage) {
 		requesterIdentity := req.Id
 		unicastAcknowledgementMessage(requesterIdentity, s, newAck)
 		s.sentAcknowledgementMessages[req.Step] = append(s.sentAcknowledgementMessages[req.Step], newAck)
-		//fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, req.Id, newAck.UnwitnessedMessage.Step)
-
-		//}
-		//else if req.Step < stepNow {
-		//
-		//	s.recievedUnwitnessedMessages[req.Step] = append(s.recievedUnwitnessedMessages[req.Step], req)
-		//	newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: req, SentArray: convertInt2DtoString1D(s.sent, s)}
-		//	requesterIdentity := req.Id
-		//	unicastAcknowledgementMessage(requesterIdentity, s, newAck)
-		//	s.sentAcknowledgementMessages[req.Step] = append(s.sentAcknowledgementMessages[req.Step], newAck)
-		//fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, req.Id, newAck.UnwitnessedMessage.Step)
-
-		//catchUpThresholdwitnessedMessages := make(map[int]*template.ArrayWitnessedMessages)
-		//for i := req.Step; i < stepNow; i++ {
-		//
-		//	recievedMessages := s.recievedThresholdwitnessedMessages[i]
-		//	newArrayWitnessedMessages := &template.ArrayWitnessedMessages{Messages: recievedMessages}
-		//	catchUpThresholdwitnessedMessages[i] = newArrayWitnessedMessages
-		//}
-		//
-		//newCatchUpMessage := &template.CatchUpMessage{Id: s.ServerIdentity(), Step: stepNow, RecievedThresholdwitnessedMessages: catchUpThresholdwitnessedMessages, SentArray: convertInt2DtoString1D(s.sent, s)}
-		//unicastCatchUpMessage(req.Id, s, newCatchUpMessage)
-		//fmt.Printf("%s at %d sent catchup to %s with step %d \n", s.ServerIdentity(), s.step, req.Id, stepNow)
 
 	} else if req.Step > stepNow {
-		// save the unwitnessed message and later send ack
 		s.recievedTempUnwitnessedMessages[req.Step] = append(s.recievedTempUnwitnessedMessages[req.Step], req)
 	}
 
@@ -504,31 +388,27 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 		}
 	}
 
-	reqIndex := findIndexOf(s.memberNames, string(req.Id.Address))
+	reqIndex := findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
 
 	s.deliv[reqIndex] = s.deliv[reqIndex] + 1
-
-	//fmt.Printf("%s at %d received ack from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.UnwitnessedMessage.Step)
 
 	s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step] = append(s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step], req)
 	stepNow := s.step
 	hasEnoughAcks := s.recievedAcksBool[stepNow]
 
 	if !hasEnoughAcks {
-		// check whether this process has received a majority of acks from a majority of nodes
 
 		lenRecievedAcks := len(s.recievedAcknowledgesMessages[stepNow])
 
 		if lenRecievedAcks >= s.majority {
 
-			// check if they are from distinct processes, no duplicates
 			nodes := make([]*network.ServerIdentity, 0)
 			for _, ack := range s.recievedAcknowledgesMessages[stepNow] {
 				ackId := ack.Id
 				exists := false
+				ackIdJson, _ := json.Marshal(ackId)
 				for _, num := range nodes {
 					numJson, _ := json.Marshal(num)
-					ackIdJson, _ := json.Marshal(ackId)
 
 					if string(numJson) == string(ackIdJson) {
 						exists = true
@@ -540,10 +420,10 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 				}
 			}
 			if len(nodes) >= s.majority {
-				//fmt.Printf("%s Recieved a majority of Acks \n", s.ServerIdentity())
 				s.recievedAcksBool[stepNow] = true
 
 				var newWitness *template.WitnessedMessage
+
 				if s.sentUnwitnessMessages[stepNow].Messagetype == 0 {
 					newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
 				}
@@ -573,9 +453,8 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 					}
 				}
 
-				broadcastWitnessedMessage(s.memberNodes, s, newWitness)
+				broadcastWitnessedMessage(s.admissionCommittee, s, newWitness)
 				s.sentThresholdWitnessedMessages[stepNow] = newWitness
-				//fmt.Printf("%s at %d broadcast witnessed with step %d \n", s.ServerIdentity(), s.step, newWitness.Step)
 			}
 
 		}
@@ -592,11 +471,9 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 		}
 	}
 
-	reqIndex := findIndexOf(s.memberNames, string(req.Id.Address))
+	reqIndex := findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
 
 	s.deliv[reqIndex] = s.deliv[reqIndex] + 1
-
-	//fmt.Printf("%s at %d received witnessed from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
 
 	stepNow := s.step
 	s.recievedThresholdwitnessedMessages[req.Step] = append(s.recievedThresholdwitnessedMessages[req.Step], req)
@@ -612,16 +489,14 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 			nodes := make([]*network.ServerIdentity, 0)
 			for _, twm := range s.recievedThresholdwitnessedMessages[stepNow] {
 				twmId := twm.Id
+				twmIdJson, _ := json.Marshal(twmId)
 				exists := false
 				for _, num := range nodes {
 					numJson, _ := json.Marshal(num)
-					twmIdJson, _ := json.Marshal(twmId)
-
 					if string(numJson) == string(twmIdJson) {
 						exists = true
 						break
 					}
-
 				}
 				if !exists {
 					nodes = append(nodes, twmId)
@@ -631,10 +506,9 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 			if len(nodes) >= s.majority {
 				s.recievedWitnessedMessagesBool[stepNow] = true
 				for _, nodeId := range nodes {
+					jsnNodeId, _ := json.Marshal(nodeId)
 					for _, twm := range s.recievedThresholdwitnessedMessages[stepNow] {
-						jsnNodeId, _ := json.Marshal(nodeId)
 						jsnTwmId, _ := json.Marshal(twm.Id)
-
 						if string(jsnNodeId) == string(jsnTwmId) {
 							s.recievedThresholdStepWitnessedMessages[stepNow] = append(s.recievedThresholdStepWitnessedMessages[stepNow], twm)
 							break
@@ -642,11 +516,9 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					}
 				}
 
-				//fmt.Printf("The step threshold witnessed message array is %s for %d \n", s.recievedThresholdStepWitnessedMessages[stepNow], stepNow)
-
 				s.step = s.step + 1
 				if s.step == 1 {
-					s.majority = len(s.memberNodes)/2 + 1
+					s.majority = len(s.admissionCommittee)/2 + 1
 				}
 				stepNow = s.step
 
@@ -655,9 +527,9 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 				var unwitnessedMessage *template.UnwitnessedMessage
 
 				if stepNow == 1 {
-					// at step = 1; the consensus for the members is started, it finishes in step 31
 
-					nodes := s.memberNodes
+					s.tempNewCommittee = s.admissionCommittee
+					nodes := s.tempNewCommittee
 
 					strNodes := convertNetworkIdtoStringArray(nodes)
 
@@ -676,7 +548,6 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 						unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 2, ConsensusStepNumber: 2}
 					}
 					if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 2 {
-						// it's time to take the decision
 						consensusFound := false
 						consensusValue := make([]string, 0)
 						celebrityMessages := s.recievedThresholdStepWitnessedMessages[stepNow-2]
@@ -689,26 +560,16 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 						}
 
 						CelibrityNodes = unique(CelibrityNodes)
-						//fmt.Printf("Celebrity nodes %s \n", CelibrityNodes)
 
-						//fmt.Printf("Celebrity Nodes  are %s \n", CelibrityNodes)
-
-						//fmt.Printf("The set of celebrity nodes according to %s is %s \n", s.ServerIdentity(), CelibrityNodes)
 						globalMaxRandomNumber := findGlobalMaxRandomNumber(s.recievedThresholdwitnessedMessages[stepNow-3])
 
-						//globalMaxNumberOfNodes := findGlobalMaxNumberOfNodes(s.recievedThresholdwitnessedMessages[0])
-
-						//fmt.Printf("Global max random number according to %s is %d \n", s.ServerIdentity(), globalMaxRandomNumber)
 						for i := 0; i < len(CelibrityNodes); i++ {
-
-							//fmt.Printf("Json Node id is %s \n", string(CelibrityNodes[i]))
 
 							for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
 
 								jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
-								//fmt.Printf("Json Node id from message  is %s \n", string(jsnTwmId))
 
-								if string(CelibrityNodes[i]) == string(jsnTwmId) {
+								if CelibrityNodes[i] == string(jsnTwmId) {
 
 									if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
 										consensusFound = true
@@ -740,7 +601,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 									jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
 
-									if string(CelibrityNodes1[i]) == string(jsnTwmId) {
+									if CelibrityNodes1[i] == string(jsnTwmId) {
 
 										if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
 											consensusFound = true
@@ -764,7 +625,6 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 						if consensusFound {
 							fmt.Printf("Found consensus with random number %d and the consensus property is %s with length %d \n", randomNumber, properConsensus, len(consensusValue))
 							s.tempConsensusNodes = convertStringArraytoNetworkId(consensusValue)
-							// set the roster
 						} else {
 							fmt.Printf("Did not find consensus\n")
 						}
@@ -779,12 +639,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 								strNodes = convertNetworkIdtoStringArray(s.tempConsensusNodes)
 							} else {
 
-								nodes := make([]*network.ServerIdentity, 0)
-
-								for _, node := range s.memberNodes {
-									nodes = append(nodes, node)
-
-								}
+								nodes := s.tempNewCommittee
 
 								strNodes = convertNetworkIdtoStringArray(nodes)
 							}
@@ -801,24 +656,24 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 								fmt.Printf("%s Updated the roster with new set of nodes\n", s.ServerIdentity())
 
-								s.memberNodes = s.tempConsensusNodes
+								s.admissionCommittee = s.tempConsensusNodes
 
-								s.majority = len(s.memberNodes)/2 + 1
+								s.majority = len(s.admissionCommittee)/2 + 1
 
 								s.name = string(s.ServerIdentity().Address)
 
-								for i := 0; i < len(s.memberNodes); i++ {
+								for i := 0; i < len(s.admissionCommittee); i++ {
 									isNewNode := true
-									for j := 0; j < len(s.memberNames); j++ {
-										if s.memberNames[j] == string(s.memberNodes[i].Address) {
+									for j := 0; j < len(s.vectorClockMemberList); j++ {
+										if s.vectorClockMemberList[j] == string(s.admissionCommittee[i].Address) {
 											isNewNode = false
 											break
 										}
 									}
 									if isNewNode {
-										for j := 0; j < len(s.memberNames); j++ {
-											if s.memberNames[j] == "" {
-												s.memberNames[j] = string(s.memberNodes[i].Address)
+										for j := 0; j < len(s.vectorClockMemberList); j++ {
+											if s.vectorClockMemberList[j] == "" {
+												s.vectorClockMemberList[j] = string(s.admissionCommittee[i].Address)
 												break
 											}
 										}
@@ -828,12 +683,12 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 								// calculate ping distances, for now lets mock the ping distances
 
-								pingDistances := make([]int, len(s.memberNodes))
-								for i := 0; i < len(s.memberNodes); i++ {
+								pingDistances := make([]int, len(s.admissionCommittee))
+								for i := 0; i < len(s.admissionCommittee); i++ {
 									pingDistances[i] = rand.Intn(300)
 								}
 
-								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 1, PingDistances: convertInttoStringArray(pingDistances)}
+								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 1, PingDistances: convertIntArraytoStringArray(pingDistances)}
 
 								s.tempConsensusNodes = nil
 
@@ -850,18 +705,18 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 				if stepNow == 33 {
 
-					pingMatrix := make([][]int, len(s.memberNodes))
+					pingMatrix := make([][]int, len(s.admissionCommittee))
 
-					for i := 0; i < len(s.memberNodes); i++ {
+					for i := 0; i < len(s.admissionCommittee); i++ {
 						for l := 0; l < len(s.recievedThresholdwitnessedMessages[31]); l++ {
-							if string(s.recievedThresholdwitnessedMessages[31][l].Id.Address) == string(s.memberNodes[i].Address) {
-								pingMatrix[i] = convertStringtoIntArray(s.recievedThresholdwitnessedMessages[31][l].PingDistances)
+							if string(s.recievedThresholdwitnessedMessages[31][l].Id.Address) == string(s.admissionCommittee[i].Address) {
+								pingMatrix[i] = convertStringArraytoIntArray(s.recievedThresholdwitnessedMessages[31][l].PingDistances)
 								break
 							}
 						}
 					}
 
-					pingMatrixStr := convertInt2DtoString1D(pingMatrix, len(s.memberNodes), len(s.memberNodes))
+					pingMatrixStr := convertInt2DtoString1D(pingMatrix, len(s.admissionCommittee), len(s.admissionCommittee))
 
 					randomNumber := rand.Intn(10000)
 
@@ -879,7 +734,6 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 						unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 3, ConsensusStepNumber: 2}
 					}
 					if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 2 {
-						// it's time to take the decision
 						consensusFound := false
 						consensusValue := make([]string, 0)
 						celebrityMessages := s.recievedThresholdStepWitnessedMessages[stepNow-2]
@@ -892,26 +746,15 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 						}
 
 						CelibrityNodes = unique(CelibrityNodes)
-						//fmt.Printf("Celebrity nodes %s \n", CelibrityNodes)
-
-						//fmt.Printf("Celebrity Nodes  are %s \n", CelibrityNodes)
-
-						//fmt.Printf("The set of celebrity nodes according to %s is %s \n", s.ServerIdentity(), CelibrityNodes)
 						globalMaxRandomNumber := findGlobalMaxRandomNumber(s.recievedThresholdwitnessedMessages[stepNow-3])
 
-						//globalMaxNumberOfNodes := findGlobalMaxNumberOfNodes(s.recievedThresholdwitnessedMessages[0])
-
-						//fmt.Printf("Global max random number according to %s is %d \n", s.ServerIdentity(), globalMaxRandomNumber)
 						for i := 0; i < len(CelibrityNodes); i++ {
-
-							//fmt.Printf("Json Node id is %s \n", string(CelibrityNodes[i]))
 
 							for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
 
 								jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
-								//fmt.Printf("Json Node id from message  is %s \n", string(jsnTwmId))
 
-								if string(CelibrityNodes[i]) == string(jsnTwmId) {
+								if CelibrityNodes[i] == string(jsnTwmId) {
 
 									if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
 										consensusFound = true
@@ -943,7 +786,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 									jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
 
-									if string(CelibrityNodes1[i]) == string(jsnTwmId) {
+									if CelibrityNodes1[i] == string(jsnTwmId) {
 
 										if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
 											consensusFound = true
@@ -967,7 +810,6 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 						if consensusFound {
 							fmt.Printf("Found consensus with random number %d and the consensus property is %s \n", randomNumber, properConsensus)
 							s.tempPingConsensus = consensusValue
-							// set the roster
 						} else {
 							fmt.Printf("Did not find consensus\n")
 						}
@@ -981,7 +823,6 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 							} else if s.tempPingConsensus != nil && len(s.tempPingConsensus) > 0 {
 								strPingMtrx = s.tempPingConsensus
 							} else {
-
 								strPingMtrx = s.sentUnwitnessMessages[31].PingDistances
 							}
 							randomNumber := rand.Intn(10000)
@@ -995,7 +836,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 							if s.tempPingConsensus != nil && stepNow == 63 {
 
-								s.pingConsensus = convertString1DtoInt2D(s.tempPingConsensus, len(s.memberNodes), len(s.memberNodes))
+								s.pingConsensus = convertString1DtoInt2D(s.tempPingConsensus, len(s.admissionCommittee), len(s.admissionCommittee))
 
 								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
 
@@ -1020,14 +861,12 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 				value, ok := s.sentUnwitnessMessages[stepNow]
 
 				if !ok {
-					broadcastUnwitnessedMessage(s.memberNodes, s, unwitnessedMessage)
+					broadcastUnwitnessedMessage(s.admissionCommittee, s, unwitnessedMessage)
 					s.sentUnwitnessMessages[stepNow] = unwitnessedMessage
-					//fmt.Printf("%s at %d broadcast unwitnessed with step %d \n", s.ServerIdentity(), s.step, s.step)
 				} else {
 					fmt.Printf("Unwitnessed message %s for step %d from %s is already sent; possible race condition \n", value, stepNow, s.ServerIdentity())
 				}
 
-				// check if there are unwitnessed messages to which this process didn't send and ack previously
 				unAckedUnwitnessedMessages := s.recievedTempUnwitnessedMessages[stepNow]
 				for _, uauwm := range unAckedUnwitnessedMessages {
 					s.recievedUnwitnessedMessages[uauwm.Step] = append(s.recievedUnwitnessedMessages[uauwm.Step], uauwm)
@@ -1035,7 +874,6 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					requesterIdentity := uauwm.Id
 					unicastAcknowledgementMessage(requesterIdentity, s, newAck)
 					s.sentAcknowledgementMessages[uauwm.Step] = append(s.sentAcknowledgementMessages[uauwm.Step], newAck)
-					//fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, requesterIdentity, newAck.UnwitnessedMessage.Step)
 				}
 
 			}
@@ -1045,90 +883,6 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 	}
 }
 
-//func handleCatchUpMessage(s *Service, req *template.CatchUpMessage) {
-//
-//	reqSentArray := convertString1DtoInt2D(req.SentArray, s)
-//
-//	for i := 0; i < len(s.roster.List); i++ {
-//		for j := 0; j < len(s.roster.List); j++ {
-//			s.sent[i][j] = max(s.sent[i][j], reqSentArray[i][j])
-//		}
-//	}
-//
-//	reqIndex := -1
-//
-//	for i := 0; i < len(s.roster.List); i++ {
-//
-//		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-//
-//		reqId, _ := json.Marshal(req.Id)
-//
-//		if string(rosterIdAtI) == string(reqId) {
-//			reqIndex = i
-//			break
-//		}
-//
-//	}
-//
-//	s.deliv[reqIndex] = s.deliv[reqIndex] + 1
-//
-//	//fmt.Printf("%s at %d received catchup from %s with step %d \n", s.ServerIdentity(), s.step, req.Id, req.Step)
-//
-//	stepNow := s.step
-//
-//	if stepNow < req.Step {
-//
-//		catchUpMap := req.RecievedThresholdwitnessedMessages
-//		for i := stepNow; i < req.Step; i++ {
-//			s.recievedThresholdwitnessedMessages[i] = catchUpMap[i].Messages
-//			s.recievedWitnessedMessagesBool[i] = true
-//			s.step = i + 1
-//			stepNow = s.step
-//
-//			// check if there are unwitnessed messages to which this process didn't send and ack previously
-//			unAckedUnwitnessedMessages := s.recievedTempUnwitnessedMessages[stepNow]
-//			for _, uauwm := range unAckedUnwitnessedMessages {
-//				s.recievedUnwitnessedMessages[uauwm.Step] = append(s.recievedUnwitnessedMessages[uauwm.Step], uauwm)
-//				newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: uauwm, SentArray: convertInt2DtoString1D(s.sent, s)}
-//				requesterIdentity := uauwm.Id
-//				unicastAcknowledgementMessage(requesterIdentity, s, newAck)
-//				s.sentAcknowledgementMessages[uauwm.Step] = append(s.sentAcknowledgementMessages[uauwm.Step], newAck)
-//				//fmt.Printf("%s at %d sent ack to %s with step %d \n", s.ServerIdentity(), s.step, requesterIdentity, newAck.UnwitnessedMessage.Step)
-//			}
-//		}
-//
-//		s.step = req.Step
-//		stepNow = s.step
-//
-//		fmt.Printf("%s' increased time step to %d  with catched up \n", s.ServerIdentity(), stepNow)
-//
-//		unwitnessedMessage := &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s)}
-//
-//		if s.roster == nil {
-//			//fmt.Printf("%s's roster is nil \n", s.ServerIdentity())
-//			return
-//		}
-//
-//		if stepNow > s.maxTime {
-//			return
-//		}
-//
-//		value, ok := s.sentUnwitnessMessages[stepNow]
-//
-//		if !ok {
-//			broadcastUnwitnessedMessage(s.roster.List, s, unwitnessedMessage)
-//			s.sentUnwitnessMessages[stepNow] = unwitnessedMessage
-//			//fmt.Printf("%s at %d broadcast unwitnessed with step %d \n", s.ServerIdentity(), s.step, s.step)
-//		} else {
-//			fmt.Printf("Unwitnessed message %s for step %d from %s is already sent; possible race condition \n", value, stepNow, s.ServerIdentity())
-//		}
-//
-//	}
-//}
-
-// newService receives the context that holds information about the node it's
-// running on. Saving and loading can be done using the context. The data will
-// be stored in memory for tests and simulations, and on disk for real deployments.
 func newService(c *onet.Context) (onet.Service, error) {
 	s := &Service{
 		ServiceProcessor: onet.NewServiceProcessor(c),
@@ -1187,12 +941,8 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		tempConsensusNodes: nil,
 	}
-	if err := s.RegisterHandlers(s.Clock, s.Count, s.SetGenesisSet, s.InitRequest); err != nil {
+	if err := s.RegisterHandlers(s.SetGenesisSet, s.InitRequest); err != nil {
 		return nil, errors.New("couldn't register messages")
-	}
-	if err := s.tryLoad(); err != nil {
-		log.Error(err)
-		return nil, err
 	}
 
 	s.RegisterProcessorFunc(unwitnessedMessageMsgID, func(arg1 *network.Envelope) error {
@@ -1206,9 +956,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 			return nil
 		}
 
-		// check if this message can be received correctly
-
-		myIndex := findIndexOf(s.memberNames, s.name)
+		myIndex := findIndexOf(s.vectorClockMemberList, s.name)
 
 		canDeleiver := true
 
@@ -1222,12 +970,9 @@ func newService(c *onet.Context) (onet.Service, error) {
 		}
 
 		if canDeleiver {
-			//fmt.Printf("INFO %s can deliver a message from %s with number %d \n", s.ServerIdentity(), req.Id, req.Number)
 			handleUnwitnessedMessage(s, req)
 
 		} else {
-			// add the message to temp buffer
-			//fmt.Printf("INFO %s can not deliver an unwitnessed message from %s with number %d, buffering \n", s.ServerIdentity(), req.Id, req.Step)
 			s.bufferedUnwitnessedMessages = append(s.bufferedUnwitnessedMessages, req)
 		}
 
@@ -1246,9 +991,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 			return nil
 		}
 
-		// check if this message can be received correctly
-
-		myIndex := findIndexOf(s.memberNames, s.name)
+		myIndex := findIndexOf(s.vectorClockMemberList, s.name)
 
 		canDeleiver := true
 
@@ -1262,12 +1005,9 @@ func newService(c *onet.Context) (onet.Service, error) {
 		}
 
 		if canDeleiver {
-			//fmt.Printf("INFO %s can deliver a message from %s with number %d \n", s.ServerIdentity(), req.Id, req.Number)
 			handleAckMessage(s, req)
 
 		} else {
-			// add the message to temp buffer
-			//fmt.Printf("INFO %s can not deliver an ack message from %s with number %d, buffering \n", s.ServerIdentity(), req.Id, req.UnwitnessedMessage.Step)
 			s.bufferedAckMessages = append(s.bufferedAckMessages, req)
 		}
 
@@ -1284,10 +1024,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 			log.Error(s.ServerIdentity(), "failed to cast to witnessed message")
 			return nil
 		}
-
-		// check if this message can be received correctly
-
-		myIndex := findIndexOf(s.memberNames, s.name)
+		myIndex := findIndexOf(s.vectorClockMemberList, s.name)
 
 		canDeleiver := true
 
@@ -1301,68 +1038,15 @@ func newService(c *onet.Context) (onet.Service, error) {
 		}
 
 		if canDeleiver {
-			//fmt.Printf("INFO %s can deliver a message from %s with number %d \n", s.ServerIdentity(), req.Id, req.Number)
 			handleWitnessedMessage(s, req)
 
 		} else {
-			// add the message to temp buffer
-			//fmt.Printf("INFO %s can not deliver an witnessed message from %s with number %d, buffering \n", s.ServerIdentity(), req.Id, req.Step)
 			s.bufferedWitnessedMessages = append(s.bufferedWitnessedMessages, req)
 		}
 
 		handleBufferedMessages(s)
 		return nil
 	})
-	//s.RegisterProcessorFunc(catchUpMessageID, func(arg1 *network.Envelope) error {
-	//	defer s.stepLock.Unlock()
-	//	s.stepLock.Lock()
-	//
-	//	req, ok := arg1.Msg.(*template.CatchUpMessage)
-	//	if !ok {
-	//		log.Error(s.ServerIdentity(), "failed to cast to catch up message")
-	//		return nil
-	//	}
-	//
-	//	// check if this message can be received correctly
-	//
-	//	myIndex := -1
-	//	for i := 0; i < len(s.roster.List); i++ {
-	//
-	//		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-	//
-	//		myServerId, _ := json.Marshal(s.ServerIdentity())
-	//
-	//		if string(rosterIdAtI) == string(myServerId) {
-	//			myIndex = i
-	//			break
-	//		}
-	//
-	//	}
-	//
-	//	canDeleiver := true
-	//
-	//	reqSentArray := convertString1DtoInt2D(req.SentArray, s)
-	//
-	//	for i := 0; i < len(s.roster.List); i++ {
-	//		if s.deliv[i] < reqSentArray[i][myIndex] {
-	//			canDeleiver = false
-	//			break
-	//		}
-	//	}
-	//
-	//	if canDeleiver {
-	//		//fmt.Printf("INFO %s can deliver a message from %s with number %d \n", s.ServerIdentity(), req.Id, req.Number)
-	//		handleCatchUpMessage(s, req)
-	//
-	//	} else {
-	//		// add the message to temp buffer
-	//		//fmt.Printf("INFO %s can not deliver a catchup message from %s with number %d, buffering \n", s.ServerIdentity(), req.Id, req.Step)
-	//		s.bufferedCatchupMessages = append(s.bufferedCatchupMessages, req)
-	//	}
-	//
-	//	handleBufferedMessages(s)
-	//	return nil
-	//})
 
 	return s, nil
 }
@@ -1371,7 +1055,7 @@ func handleBufferedMessages(s *Service) {
 
 	if len(s.bufferedUnwitnessedMessages) > 0 {
 
-		myIndex := findIndexOf(s.memberNames, s.name)
+		myIndex := findIndexOf(s.vectorClockMemberList, s.name)
 
 		processedBufferedMessages := make([]int, 0)
 		for k := 0; k < len(s.bufferedUnwitnessedMessages); k++ {
@@ -1393,12 +1077,7 @@ func handleBufferedMessages(s *Service) {
 			}
 
 			if canDeleiver {
-				//remove message from buffered requests
-				//firstHalf := s.bufferedMessages[:k]
-				//secondHalf := s.bufferedMessages[k+1:]
-				//s.bufferedMessages = append(firstHalf, secondHalf...)
 				processedBufferedMessages = append(processedBufferedMessages, k)
-				//fmt.Printf("INFO %s process a buffered message from %s with number %d \n", s.ServerIdentity(), bufferedRequest.Id, bufferedRequest.Step)
 				handleUnwitnessedMessage(s, bufferedRequest)
 			}
 		}
@@ -1410,7 +1089,7 @@ func handleBufferedMessages(s *Service) {
 
 	if len(s.bufferedAckMessages) > 0 {
 
-		myIndex := findIndexOf(s.memberNames, s.name)
+		myIndex := findIndexOf(s.vectorClockMemberList, s.name)
 
 		processedBufferedMessages := make([]int, 0)
 		for k := 0; k < len(s.bufferedAckMessages); k++ {
@@ -1432,12 +1111,7 @@ func handleBufferedMessages(s *Service) {
 			}
 
 			if canDeleiver {
-				//remove message from buffered requests
-				//firstHalf := s.bufferedMessages[:k]
-				//secondHalf := s.bufferedMessages[k+1:]
-				//s.bufferedMessages = append(firstHalf, secondHalf...)
 				processedBufferedMessages = append(processedBufferedMessages, k)
-				//fmt.Printf("INFO %s process a buffered message from %s with number %d \n", s.ServerIdentity(), bufferedRequest.Id, bufferedRequest.UnwitnessedMessage.Step)
 				handleAckMessage(s, bufferedRequest)
 			}
 		}
@@ -1449,7 +1123,7 @@ func handleBufferedMessages(s *Service) {
 
 	if len(s.bufferedWitnessedMessages) > 0 {
 
-		myIndex := findIndexOf(s.memberNames, s.name)
+		myIndex := findIndexOf(s.vectorClockMemberList, s.name)
 
 		processedBufferedMessages := make([]int, 0)
 
@@ -1472,12 +1146,7 @@ func handleBufferedMessages(s *Service) {
 			}
 
 			if canDeleiver {
-				//remove message from buffered requests
-				//firstHalf := s.bufferedMessages[:k]
-				//secondHalf := s.bufferedMessages[k+1:]
-				//s.bufferedMessages = append(firstHalf, secondHalf...)
 				processedBufferedMessages = append(processedBufferedMessages, k)
-				//fmt.Printf("INFO %s process a buffered message from %s with number %d \n", s.ServerIdentity(), bufferedRequest.Id, bufferedRequest.Step)
 				handleWitnessedMessage(s, bufferedRequest)
 			}
 		}
@@ -1486,55 +1155,5 @@ func handleBufferedMessages(s *Service) {
 		}
 
 	}
-	//if len(s.bufferedCatchupMessages) > 0 {
-	//
-	//	myIndex := -1
-	//	for i := 0; i < len(s.roster.List); i++ {
-	//
-	//		rosterIdAtI, _ := json.Marshal(s.roster.List[i])
-	//
-	//		myServerId, _ := json.Marshal(s.ServerIdentity())
-	//
-	//		if string(rosterIdAtI) == string(myServerId) {
-	//			myIndex = i
-	//			break
-	//		}
-	//
-	//	}
-	//
-	//	processedBufferedMessages := make([]int, 0)
-	//	for k := 0; k < len(s.bufferedCatchupMessages); k++ {
-	//
-	//		bufferedRequest := s.bufferedCatchupMessages[k]
-	//
-	//		if bufferedRequest == nil {
-	//			continue
-	//		}
-	//
-	//		canDeleiver := true
-	//		reqSentArray := convertString1DtoInt2D(bufferedRequest.SentArray, s)
-	//
-	//		for i := 0; i < len(s.roster.List); i++ {
-	//			if s.deliv[i] < reqSentArray[i][myIndex] {
-	//				canDeleiver = false
-	//				break
-	//			}
-	//		}
-	//
-	//		if canDeleiver {
-	//			//remove message from buffered requests
-	//			//firstHalf := s.bufferedMessages[:k]
-	//			//secondHalf := s.bufferedMessages[k+1:]
-	//			//s.bufferedMessages = append(firstHalf, secondHalf...)
-	//			processedBufferedMessages = append(processedBufferedMessages, k)
-	//			//fmt.Printf("INFO %s process a buffered message from %s with number %d \n", s.ServerIdentity(), bufferedRequest.Id, bufferedRequest.Step)
-	//			handleCatchUpMessage(s, bufferedRequest)
-	//		}
-	//	}
-	//	for q := 0; q < len(processedBufferedMessages); q++ {
-	//		s.bufferedCatchupMessages[processedBufferedMessages[q]] = nil
-	//	}
-	//
-	//}
 
 }

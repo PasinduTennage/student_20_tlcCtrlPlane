@@ -94,19 +94,6 @@ func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 		_, _ = clients[i].SendInitRequest(config.Roster.List[i])
 	}
 
-	//size := config.Tree.Size()
-	//log.Lvl2("Size is:", size, "rounds:", s.Rounds)
-	//c := template.NewClient()
-	//for round := 0; round < 1; round++ {
-	//	log.Lvl1("Starting round", round)
-	//	round := monitor.NewTimeMeasure("round")
-	//	resp, err := c.Clock(config.Roster)
-	//	log.ErrFatal(err)
-	//	if resp.Time <= 0 {
-	//		log.Fatal("0 time elapsed")
-	//	}
-	//	round.Record()
-	//}
-	time.Sleep(10 * time.Second)
+	time.Sleep(20 * time.Second)
 	return nil
 }
