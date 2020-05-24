@@ -335,7 +335,7 @@ func max(num1 int, num2 int) int {
 func convertIntArraytoStringArray(values []int) []string {
 	stringArray := make([]string, len(values))
 	for i := 0; i < len(values); i++ {
-		stringArray[i] = string(values[i])
+		stringArray[i] = strconv.Itoa(values[i])
 	}
 	return stringArray
 }
@@ -658,9 +658,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 								s.admissionCommittee = s.tempConsensusNodes
 
-								s.majority = len(s.admissionCommittee)/2 + 1
-
-								s.name = string(s.ServerIdentity().Address)
+								s.majority = len(s.admissionCommittee)
 
 								for i := 0; i < len(s.admissionCommittee); i++ {
 									isNewNode := true
@@ -670,6 +668,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 											break
 										}
 									}
+
 									if isNewNode {
 										for j := 0; j < len(s.vectorClockMemberList); j++ {
 											if s.vectorClockMemberList[j] == "" {
