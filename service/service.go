@@ -38,6 +38,10 @@ type Service struct {
 
 	storage *storage
 
+	maxConsensusRounds int
+
+	multiCastRounds int
+
 	tempConsensusNodes []*network.ServerIdentity
 
 	tempPingConsensus []string
@@ -394,6 +398,7 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 
 	s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step] = append(s.recievedAcknowledgesMessages[req.UnwitnessedMessage.Step], req)
 	stepNow := s.step
+
 	hasEnoughAcks := s.recievedAcksBool[stepNow]
 
 	if !hasEnoughAcks {
@@ -528,332 +533,420 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 				if stepNow == 1 {
 
+					// start membership consensus
+					randomNumber := rand.Intn(s.maxNodeCount * 10000)
+
+					fmt.Printf("%s started the membership consensus process with initial random number is %d \n", s.ServerIdentity(), randomNumber)
+
 					s.tempNewCommittee = s.admissionCommittee
+
 					nodes := s.tempNewCommittee
 
 					strNodes := convertNetworkIdtoStringArray(nodes)
 
-					randomNumber := rand.Intn(10000)
-
-					fmt.Printf("%s's initial proposal random number is %d \n", s.ServerIdentity(), randomNumber)
-
-					unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: 128, Messagetype: 2, ConsensusStepNumber: 0}
-				} // start member ship consensus
-
-				if 1 < stepNow && stepNow <= 385 {
-					if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 0 {
-						unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Nodes: convertNetworkIdtoStringArray(nodes), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 2, ConsensusStepNumber: 1}
+					unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: s.maxConsensusRounds, Messagetype: 2, ConsensusStepNumber: 0}
+				}
+				if stepNow > 1 {
+					if s.sentUnwitnessMessages[stepNow-1].Messagetype == 0 {
+						unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
 					}
-					if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 1 {
-						unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 2, ConsensusStepNumber: 2}
-					}
-					if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 2 {
-						consensusFound := false
-						consensusValue := make([]string, 0)
-						celebrityMessages := s.recievedThresholdStepWitnessedMessages[stepNow-2]
-						randomNumber := -1
-						properConsensus := false
+					if s.sentUnwitnessMessages[stepNow-1].Messagetype == 1 {
+						// ping distance multicast
+						if s.sentUnwitnessMessages[stepNow-1].PingMulticastRoundNumber > 1 {
+							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 1, PingDistances: s.sentUnwitnessMessages[stepNow-1].PingDistances, PingMulticastRoundNumber: s.sentUnwitnessMessages[stepNow-1].PingMulticastRoundNumber - 1}
+						} else {
+							// make the ping distance matrix and start the ping consensus protocol
+							pingMatrix := make([][]int, len(s.admissionCommittee))
 
-						CelibrityNodes := make([]string, 0)
-						for i := 0; i < len(celebrityMessages); i++ {
-							CelibrityNodes = append(CelibrityNodes, celebrityMessages[i].Nodes...) //possible duplicates
-						}
-
-						CelibrityNodes = unique(CelibrityNodes)
-
-						globalMaxRandomNumber := findGlobalMaxRandomNumber(s.recievedThresholdwitnessedMessages[stepNow-3])
-
-						for i := 0; i < len(CelibrityNodes); i++ {
-
-							for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
-
-								jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
-
-								if CelibrityNodes[i] == string(jsnTwmId) {
-
-									if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
-										consensusFound = true
-										consensusValue = s.recievedThresholdwitnessedMessages[stepNow-3][j].NodesProposal
-										randomNumber = s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber
-										properConsensus = true
+							for i := 0; i < len(s.admissionCommittee); i++ {
+								found := false
+								q := 1
+								for found == false && q < s.multiCastRounds {
+									for l := 0; l < len(s.recievedThresholdwitnessedMessages[stepNow-q]); l++ {
+										if string(s.recievedThresholdwitnessedMessages[stepNow-q][l].Id.Address) == string(s.admissionCommittee[i].Address) &&
+											s.recievedThresholdwitnessedMessages[stepNow-q][l].PingDistances != nil &&
+											len(s.recievedThresholdwitnessedMessages[stepNow-q][l].PingDistances) > 0 {
+											pingMatrix[i] = convertStringArraytoIntArray(s.recievedThresholdwitnessedMessages[stepNow-q][l].PingDistances)
+											found = true
+											break
+										}
 									}
-
-									break
+									q = q + 1
 								}
 							}
-							if consensusFound {
-								break
-							}
+							s.tempPingConsensus = pingMatrix
+							pingMatrixStr := convertInt2DtoString1D(pingMatrix, len(s.admissionCommittee), len(s.admissionCommittee))
+
+							randomNumber := rand.Intn(10000)
+
+							fmt.Printf("%s's initial ping proposal random number is %d \n", s.ServerIdentity(), randomNumber)
+
+							unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), PingMetrix: pingMatrixStr, RandomNumber: randomNumber, ConsensusRoundNumber: s.maxConsensusRounds, Messagetype: 3, ConsensusStepNumber: 0, FoundConsensus: false}
+
 						}
+					}
+					if s.sentUnwitnessMessages[stepNow-1].Messagetype == 2 {
+						if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 0 {
+							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Nodes: convertNetworkIdtoStringArray(nodes), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 2, ConsensusStepNumber: 1, FoundConsensus: s.sentUnwitnessMessages[stepNow-1].FoundConsensus}
+						}
+						if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 1 {
+							if s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber < s.maxConsensusRounds {
+								// there have been at least one finished consensus round
+								numSeenConsensus := 0
 
-						if !consensusFound {
-							witnessedMessages1 := s.recievedThresholdwitnessedMessages[stepNow-2]
-							CelibrityNodes1 := make([]string, 0)
-							for i := 0; i < len(witnessedMessages1); i++ {
-								CelibrityNodes1 = append(CelibrityNodes1, witnessedMessages1[i].Nodes...) //possible duplicates
+								for _, twm := range s.recievedThresholdwitnessedMessages[stepNow-2] {
+									if twm.FoundConsensus == true {
+										numSeenConsensus++
+									}
+								}
+
+								if numSeenConsensus > s.majority {
+									// a majority has seen the consensus, so let's move on
+									for _, twm := range s.recievedThresholdwitnessedMessages[stepNow-2] {
+										if twm.FoundConsensus == true {
+											s.admissionCommittee = convertStringArraytoNetworkId(twm.NodesProposal)
+											break
+										}
+									}
+									s.majority = len(s.admissionCommittee)/2 + 1
+
+									for i := 0; i < len(s.admissionCommittee); i++ {
+										isNewNode := true
+										for j := 0; j < len(s.vectorClockMemberList); j++ {
+											if s.vectorClockMemberList[j] == string(s.admissionCommittee[i].Address) {
+												isNewNode = false
+												break
+											}
+										}
+
+										if isNewNode {
+											for j := 0; j < len(s.vectorClockMemberList); j++ {
+												if s.vectorClockMemberList[j] == "" {
+													s.vectorClockMemberList[j] = string(s.admissionCommittee[i].Address)
+													break
+												}
+											}
+										}
+									}
+
+									// calculate ping distances, for now lets mock the ping distances
+
+									pingDistances := make([]int, len(s.admissionCommittee))
+									for i := 0; i < len(s.admissionCommittee); i++ {
+										pingDistances[i] = rand.Intn(300)
+									}
+
+									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 1, PingDistances: convertIntArraytoStringArray(pingDistances), PingMulticastRoundNumber: s.multiCastRounds}
+
+								} else {
+									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 2, ConsensusStepNumber: 2}
+								}
+
+							} else {
+								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 2, ConsensusStepNumber: 2}
 							}
 
-							CelibrityNodes1 = unique(CelibrityNodes1)
+						}
+						if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 2 {
+							consensusFound := false
+							consensusValue := make([]string, 0)
+							celebrityMessages := s.recievedThresholdStepWitnessedMessages[stepNow-2]
+							randomNumber := -1
+							properConsensus := false
 
-							for i := 0; i < len(CelibrityNodes1); i++ {
+							CelibrityNodes := make([]string, 0)
+							for i := 0; i < len(celebrityMessages); i++ {
+								CelibrityNodes = append(CelibrityNodes, celebrityMessages[i].Nodes...) //possible duplicates
+							}
+
+							CelibrityNodes = unique(CelibrityNodes)
+
+							globalMaxRandomNumber := findGlobalMaxRandomNumber(s.recievedThresholdwitnessedMessages[stepNow-3])
+
+							for i := 0; i < len(CelibrityNodes); i++ {
 
 								for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
 
 									jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
 
-									if CelibrityNodes1[i] == string(jsnTwmId) {
+									if CelibrityNodes[i] == string(jsnTwmId) {
 
 										if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
 											consensusFound = true
 											consensusValue = s.recievedThresholdwitnessedMessages[stepNow-3][j].NodesProposal
 											randomNumber = s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber
-											properConsensus = false
+											properConsensus = true
 										}
 
 										break
 									}
 								}
-
 								if consensusFound {
 									break
 								}
-
 							}
 
-						}
+							if !consensusFound {
+								witnessedMessages1 := s.recievedThresholdwitnessedMessages[stepNow-2]
+								CelibrityNodes1 := make([]string, 0)
+								for i := 0; i < len(witnessedMessages1); i++ {
+									CelibrityNodes1 = append(CelibrityNodes1, witnessedMessages1[i].Nodes...) //possible duplicates
+								}
 
-						if consensusFound {
-							fmt.Printf("Found consensus with random number %d and the consensus property is %s with length %d \n", randomNumber, properConsensus, len(consensusValue))
-							s.tempConsensusNodes = convertStringArraytoNetworkId(consensusValue)
-						} else {
-							fmt.Printf("Did not find consensus\n")
-						}
+								CelibrityNodes1 = unique(CelibrityNodes1)
 
-						if s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber > 1 {
+								for i := 0; i < len(CelibrityNodes1); i++ {
 
-							strNodes := make([]string, 0)
+									for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
 
-							if consensusFound {
-								strNodes = consensusValue
-							} else if s.tempConsensusNodes != nil && len(s.tempConsensusNodes) > 0 {
-								strNodes = convertNetworkIdtoStringArray(s.tempConsensusNodes)
-							} else {
+										jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
 
-								nodes := s.tempNewCommittee
+										if CelibrityNodes1[i] == string(jsnTwmId) {
 
-								strNodes = convertNetworkIdtoStringArray(nodes)
-							}
-							randomNumber := rand.Intn(10000)
+											if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
+												consensusFound = true
+												consensusValue = s.recievedThresholdwitnessedMessages[stepNow-3][j].NodesProposal
+												randomNumber = s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber
+												properConsensus = false
+											}
 
-							fmt.Printf("%s's new proposal random number is %d \n", s.ServerIdentity(), randomNumber)
-
-							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber - 1, Messagetype: 2, ConsensusStepNumber: 0}
-
-						} else {
-							// end of consensus rounds
-
-							if s.tempConsensusNodes != nil && stepNow == 385 {
-
-								fmt.Printf("%s Updated the roster with new set of nodes\n", s.ServerIdentity())
-
-								s.admissionCommittee = s.tempConsensusNodes
-
-								s.majority = len(s.admissionCommittee)
-
-								for i := 0; i < len(s.admissionCommittee); i++ {
-									isNewNode := true
-									for j := 0; j < len(s.vectorClockMemberList); j++ {
-										if s.vectorClockMemberList[j] == string(s.admissionCommittee[i].Address) {
-											isNewNode = false
 											break
 										}
 									}
 
-									if isNewNode {
+									if consensusFound {
+										break
+									}
+
+								}
+
+							}
+
+							if consensusFound {
+								fmt.Printf("Found consensus with random number %d and the consensus property is %s with length %d \n", randomNumber, properConsensus, len(consensusValue))
+								s.tempConsensusNodes = convertStringArraytoNetworkId(consensusValue)
+							} else {
+								fmt.Printf("Did not find consensus\n")
+							}
+
+							if s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber > 1 {
+
+								strNodes := make([]string, 0)
+
+								foundConsensus := consensusFound
+
+								if consensusFound {
+									strNodes = consensusValue
+								} else if s.tempConsensusNodes != nil && len(s.tempConsensusNodes) > 0 {
+									strNodes = convertNetworkIdtoStringArray(s.tempConsensusNodes)
+								} else {
+									nodes := s.tempNewCommittee
+									strNodes = convertNetworkIdtoStringArray(nodes)
+								}
+								randomNumber := rand.Intn(s.maxNodeCount * 10000)
+
+								fmt.Printf("%s's new proposal random number is %d \n", s.ServerIdentity(), randomNumber)
+
+								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber - 1, Messagetype: 2, ConsensusStepNumber: 0, FoundConsensus: foundConsensus}
+
+							} else {
+								// end of consensus rounds
+
+								if s.tempConsensusNodes != nil && s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber == 0 {
+
+									s.admissionCommittee = s.tempConsensusNodes
+
+									s.majority = len(s.admissionCommittee)/2 + 1
+
+									for i := 0; i < len(s.admissionCommittee); i++ {
+										isNewNode := true
 										for j := 0; j < len(s.vectorClockMemberList); j++ {
-											if s.vectorClockMemberList[j] == "" {
-												s.vectorClockMemberList[j] = string(s.admissionCommittee[i].Address)
+											if s.vectorClockMemberList[j] == string(s.admissionCommittee[i].Address) {
+												isNewNode = false
 												break
 											}
 										}
+
+										if isNewNode {
+											for j := 0; j < len(s.vectorClockMemberList); j++ {
+												if s.vectorClockMemberList[j] == "" {
+													s.vectorClockMemberList[j] = string(s.admissionCommittee[i].Address)
+													break
+												}
+											}
+										}
+
 									}
 
-								}
+									// calculate ping distances, for now lets mock the ping distances
 
-								// calculate ping distances, for now lets mock the ping distances
-
-								pingDistances := make([]int, len(s.admissionCommittee))
-								for i := 0; i < len(s.admissionCommittee); i++ {
-									pingDistances[i] = rand.Intn(300)
-								}
-
-								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 1, PingDistances: convertIntArraytoStringArray(pingDistances)}
-
-								s.tempConsensusNodes = nil
-
-							}
-
-						}
-
-					}
-				} // nodes consensus and when 31, send ping message
-
-				if stepNow == 386 {
-					unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
-				} // send normal message
-
-				if stepNow == 387 {
-
-					pingMatrix := make([][]int, len(s.admissionCommittee))
-
-					for i := 0; i < len(s.admissionCommittee); i++ {
-						for l := 0; l < len(s.recievedThresholdwitnessedMessages[stepNow-2]); l++ {
-							if string(s.recievedThresholdwitnessedMessages[stepNow-2][l].Id.Address) == string(s.admissionCommittee[i].Address) {
-								pingMatrix[i] = convertStringArraytoIntArray(s.recievedThresholdwitnessedMessages[stepNow -2][l].PingDistances)
-								break
-							}
-						}
-					}
-
-					pingMatrixStr := convertInt2DtoString1D(pingMatrix, len(s.admissionCommittee), len(s.admissionCommittee))
-
-					randomNumber := rand.Intn(10000)
-
-					fmt.Printf("%s's initial ping proposal random number is %d \n", s.ServerIdentity(), randomNumber)
-
-					unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), PingMetrix: pingMatrixStr, RandomNumber: randomNumber, ConsensusRoundNumber: 128, Messagetype: 3, ConsensusStepNumber: 0}
-
-				} // make ping distances matrx and start consensus
-
-				if 387 < stepNow && stepNow <= 771 {
-					if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 0 {
-						unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Nodes: convertNetworkIdtoStringArray(nodes), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 3, ConsensusStepNumber: 1}
-					}
-					if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 1 {
-						unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 3, ConsensusStepNumber: 2}
-					}
-					if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 2 {
-						consensusFound := false
-						consensusValue := make([]string, 0)
-						celebrityMessages := s.recievedThresholdStepWitnessedMessages[stepNow-2]
-						randomNumber := -1
-						properConsensus := false
-
-						CelibrityNodes := make([]string, 0)
-						for i := 0; i < len(celebrityMessages); i++ {
-							CelibrityNodes = append(CelibrityNodes, celebrityMessages[i].Nodes...) //possible duplicates
-						}
-
-						CelibrityNodes = unique(CelibrityNodes)
-						globalMaxRandomNumber := findGlobalMaxRandomNumber(s.recievedThresholdwitnessedMessages[stepNow-3])
-
-						for i := 0; i < len(CelibrityNodes); i++ {
-
-							for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
-
-								jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
-
-								if CelibrityNodes[i] == string(jsnTwmId) {
-
-									if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
-										consensusFound = true
-										consensusValue = s.recievedThresholdwitnessedMessages[stepNow-3][j].PingMetrix
-										randomNumber = s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber
-										properConsensus = true
+									pingDistances := make([]int, len(s.admissionCommittee))
+									for i := 0; i < len(s.admissionCommittee); i++ {
+										pingDistances[i] = rand.Intn(300)
 									}
 
-									break
+									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 1, PingDistances: convertIntArraytoStringArray(pingDistances), PingMulticastRoundNumber: s.multiCastRounds}
+
+									s.tempConsensusNodes = nil
+
 								}
+
 							}
-							if consensusFound {
-								break
-							}
+
 						}
 
-						if !consensusFound {
-							witnessedMessages1 := s.recievedThresholdwitnessedMessages[stepNow-2]
-							CelibrityNodes1 := make([]string, 0)
-							for i := 0; i < len(witnessedMessages1); i++ {
-								CelibrityNodes1 = append(CelibrityNodes1, witnessedMessages1[i].Nodes...) //possible duplicates
+					}
+					if s.sentUnwitnessMessages[stepNow-1].Messagetype == 3 {
+						if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 0 {
+							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Nodes: convertNetworkIdtoStringArray(nodes), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 3, ConsensusStepNumber: 1, FoundConsensus: s.sentUnwitnessMessages[stepNow-1].FoundConsensus}
+						}
+						if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 1 {
+							if s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber < s.maxConsensusRounds {
+								// there have been at least one finished consensus round
+								numSeenConsensus := 0
+
+								for _, twm := range s.recievedThresholdwitnessedMessages[stepNow-2] {
+									if twm.FoundConsensus == true {
+										numSeenConsensus++
+									}
+								}
+
+								if numSeenConsensus > s.majority {
+									// a majority has seen the consensus, so let's move on
+									for _, twm := range s.recievedThresholdwitnessedMessages[stepNow-2] {
+										if twm.FoundConsensus == true {
+											s.pingConsensus = convertString1DtoInt2D(twm.PingMetrix, len(s.admissionCommittee), len(s.admissionCommittee))
+
+											fmt.Printf("%s end of ping matrix consensus with ping matrix %s", s.name, s.pingConsensus)
+
+											unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
+											break
+										}
+									}
+
+								} else {
+									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 3, ConsensusStepNumber: 2}
+								}
+
+							} else {
+								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 3, ConsensusStepNumber: 2}
 							}
 
-							CelibrityNodes1 = unique(CelibrityNodes1)
+						}
+						if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 2 {
+							consensusFound := false
+							consensusValue := make([]string, 0)
+							celebrityMessages := s.recievedThresholdStepWitnessedMessages[stepNow-2]
+							randomNumber := -1
+							properConsensus := false
 
-							for i := 0; i < len(CelibrityNodes1); i++ {
+							CelibrityNodes := make([]string, 0)
+							for i := 0; i < len(celebrityMessages); i++ {
+								CelibrityNodes = append(CelibrityNodes, celebrityMessages[i].Nodes...) //possible duplicates
+							}
+
+							CelibrityNodes = unique(CelibrityNodes)
+							globalMaxRandomNumber := findGlobalMaxRandomNumber(s.recievedThresholdwitnessedMessages[stepNow-3])
+
+							for i := 0; i < len(CelibrityNodes); i++ {
 
 								for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
 
 									jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
 
-									if CelibrityNodes1[i] == string(jsnTwmId) {
+									if CelibrityNodes[i] == string(jsnTwmId) {
 
 										if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
 											consensusFound = true
 											consensusValue = s.recievedThresholdwitnessedMessages[stepNow-3][j].PingMetrix
 											randomNumber = s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber
-											properConsensus = false
+											properConsensus = true
 										}
 
 										break
 									}
 								}
-
 								if consensusFound {
 									break
+								}
+							}
+
+							if !consensusFound {
+								witnessedMessages1 := s.recievedThresholdwitnessedMessages[stepNow-2]
+								CelibrityNodes1 := make([]string, 0)
+								for i := 0; i < len(witnessedMessages1); i++ {
+									CelibrityNodes1 = append(CelibrityNodes1, witnessedMessages1[i].Nodes...) //possible duplicates
+								}
+
+								CelibrityNodes1 = unique(CelibrityNodes1)
+
+								for i := 0; i < len(CelibrityNodes1); i++ {
+
+									for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
+
+										jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
+
+										if CelibrityNodes1[i] == string(jsnTwmId) {
+
+											if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
+												consensusFound = true
+												consensusValue = s.recievedThresholdwitnessedMessages[stepNow-3][j].PingMetrix
+												randomNumber = s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber
+												properConsensus = false
+											}
+
+											break
+										}
+									}
+
+									if consensusFound {
+										break
+									}
+
+								}
+
+							}
+
+							if consensusFound {
+								fmt.Printf("Found consensus with random number %d and the consensus property is %s \n", randomNumber, properConsensus)
+								s.tempPingConsensus = consensusValue
+							} else {
+								fmt.Printf("Did not find consensus\n")
+							}
+
+							if s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber > 1 {
+
+								strPingMtrx := make([]string, 0)
+
+								if consensusFound {
+									strPingMtrx = consensusValue
+								} else if s.tempPingConsensus != nil && len(s.tempPingConsensus) > 0 {
+									strPingMtrx = s.tempPingConsensus
+								}
+								randomNumber := rand.Intn(10000)
+
+								fmt.Printf("%s's new proposal random number is %d \n", s.ServerIdentity(), randomNumber)
+
+								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), PingMetrix: strPingMtrx, RandomNumber: randomNumber, ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber - 1, Messagetype: 3, ConsensusStepNumber: 0, FoundConsensus: consensusFound}
+
+							} else {
+								// end of consensus rounds
+
+								if s.tempPingConsensus != nil && s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber == 1 {
+
+									s.pingConsensus = convertString1DtoInt2D(s.tempPingConsensus, len(s.admissionCommittee), len(s.admissionCommittee))
+
+									fmt.Printf("%s end of ping matrix consensus with ping matrix %s", s.name, s.pingConsensus)
+
+									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
+
 								}
 
 							}
 
 						}
-
-						if consensusFound {
-							fmt.Printf("Found consensus with random number %d and the consensus property is %s \n", randomNumber, properConsensus)
-							s.tempPingConsensus = consensusValue
-						} else {
-							fmt.Printf("Did not find consensus\n")
-						}
-
-						if s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber > 1 {
-
-							strPingMtrx := make([]string, 0)
-
-							if consensusFound {
-								strPingMtrx = consensusValue
-							} else if s.tempPingConsensus != nil && len(s.tempPingConsensus) > 0 {
-								strPingMtrx = s.tempPingConsensus
-							} else {
-								strPingMtrx = s.sentUnwitnessMessages[387].PingMetrix
-							}
-							randomNumber := rand.Intn(10000)
-
-							fmt.Printf("%s's new proposal random number is %d \n", s.ServerIdentity(), randomNumber)
-
-							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), PingMetrix: strPingMtrx, RandomNumber: randomNumber, ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber - 1, Messagetype: 3, ConsensusStepNumber: 0}
-
-						} else {
-							// end of consensus rounds
-
-							if s.tempPingConsensus != nil && stepNow == 771 {
-
-								s.pingConsensus = convertString1DtoInt2D(s.tempPingConsensus, len(s.admissionCommittee), len(s.admissionCommittee))
-
-								fmt.Printf("%s end of ping matrix consensus with ping matrix %s", s.name, s.pingConsensus)
-
-								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
-
-								s.tempConsensusNodes = nil
-
-							}
-
-						}
-
 					}
-
-				} // ping matrix consensus
-
-				if stepNow > 771 {
-					unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
-				} // tlc messages
+				}
 
 				if stepNow > s.maxTime {
 					return
@@ -894,6 +987,10 @@ func newService(c *onet.Context) (onet.Service, error) {
 		maxTime: 1000,
 
 		maxNodeCount: 16,
+
+		maxConsensusRounds: 128,
+
+		multiCastRounds: 10,
 
 		sentUnwitnessMessages:     make(map[int]*template.UnwitnessedMessage),
 		sentUnwitnessMessagesLock: new(sync.Mutex),
