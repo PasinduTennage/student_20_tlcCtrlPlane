@@ -173,7 +173,10 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 	defer s.stepLock.Unlock()
 	s.stepLock.Lock()
 
-	unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
+	unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step,
+		Id:          s.ServerIdentity(),
+		SentArray:   convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+		Messagetype: 0}
 
 	broadcastUnwitnessedMessage(s.admissionCommittee, s, unwitnessedMessage)
 
@@ -367,7 +370,9 @@ func handleUnwitnessedMessage(s *Service, req *template.UnwitnessedMessage) {
 	if req.Step <= stepNow {
 
 		s.recievedUnwitnessedMessages[req.Step] = append(s.recievedUnwitnessedMessages[req.Step], req)
-		newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: req, SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount)}
+		newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(),
+			UnwitnessedMessage: req,
+			SentArray:          convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount)}
 		requesterIdentity := req.Id
 		unicastAcknowledgementMessage(requesterIdentity, s, newAck)
 		s.sentAcknowledgementMessages[req.Step] = append(s.sentAcknowledgementMessages[req.Step], newAck)
@@ -426,38 +431,86 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 				var newWitness *template.WitnessedMessage
 
 				if s.sentUnwitnessMessages[stepNow].Messagetype == 0 {
-					newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
+					newWitness = &template.WitnessedMessage{Step: stepNow,
+						Id:          s.ServerIdentity(),
+						SentArray:   convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+						Messagetype: 0}
 				}
 				if s.sentUnwitnessMessages[stepNow].Messagetype == 1 {
-					newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 1, PingDistances: s.sentUnwitnessMessages[stepNow].PingDistances}
+					newWitness = &template.WitnessedMessage{Step: stepNow,
+						Id:                       s.ServerIdentity(),
+						SentArray:                convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+						Messagetype:              1,
+						PingDistances:            s.sentUnwitnessMessages[stepNow].PingDistances,
+						PingMulticastRoundNumber: s.sentUnwitnessMessages[stepNow].PingMulticastRoundNumber}
 				}
 				if s.sentUnwitnessMessages[stepNow].Messagetype == 2 {
 					if s.sentUnwitnessMessages[stepNow].ConsensusStepNumber == 0 {
-						newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), RandomNumber: s.sentUnwitnessMessages[s.step].RandomNumber, NodesProposal: s.sentUnwitnessMessages[s.step].NodesProposal, ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber, Messagetype: 2, ConsensusStepNumber: s.sentUnwitnessMessages[s.step].ConsensusStepNumber, FoundConsensus: s.sentUnwitnessMessages[s.step].FoundConsensus}
+						newWitness = &template.WitnessedMessage{Step: stepNow,
+							Id:                   s.ServerIdentity(),
+							SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+							RandomNumber:         s.sentUnwitnessMessages[s.step].RandomNumber,
+							NodesProposal:        s.sentUnwitnessMessages[s.step].NodesProposal,
+							ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber,
+							Messagetype:          2,
+							ConsensusStepNumber:  s.sentUnwitnessMessages[s.step].ConsensusStepNumber,
+							FoundConsensus:       s.sentUnwitnessMessages[s.step].FoundConsensus}
 					}
 					if s.sentUnwitnessMessages[stepNow].ConsensusStepNumber == 1 {
-						newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Nodes: s.sentUnwitnessMessages[stepNow].Nodes, ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber, Messagetype: 2, ConsensusStepNumber: s.sentUnwitnessMessages[s.step].ConsensusStepNumber, FoundConsensus: s.sentUnwitnessMessages[s.step].FoundConsensus}
+						newWitness = &template.WitnessedMessage{Step: stepNow,
+							Id:                   s.ServerIdentity(),
+							SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+							Nodes:                s.sentUnwitnessMessages[stepNow].Nodes,
+							ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber,
+							Messagetype:          2,
+							ConsensusStepNumber:  s.sentUnwitnessMessages[s.step].ConsensusStepNumber,
+							FoundConsensus:       s.sentUnwitnessMessages[s.step].FoundConsensus}
 					}
 					if s.sentUnwitnessMessages[stepNow].ConsensusStepNumber == 2 {
-						newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber, Messagetype: 2, ConsensusStepNumber: s.sentUnwitnessMessages[s.step].ConsensusStepNumber, FoundConsensus: s.sentUnwitnessMessages[s.step].FoundConsensus}
+						newWitness = &template.WitnessedMessage{Step: stepNow,
+							Id:                   s.ServerIdentity(),
+							SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+							ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber,
+							Messagetype:          2,
+							ConsensusStepNumber:  s.sentUnwitnessMessages[s.step].ConsensusStepNumber,
+							FoundConsensus:       s.sentUnwitnessMessages[s.step].FoundConsensus}
 					}
 				}
 				if s.sentUnwitnessMessages[stepNow].Messagetype == 3 {
 					if s.sentUnwitnessMessages[stepNow].ConsensusStepNumber == 0 {
-						newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), RandomNumber: s.sentUnwitnessMessages[s.step].RandomNumber, PingMetrix: s.sentUnwitnessMessages[s.step].PingMetrix, ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber, Messagetype: 3, ConsensusStepNumber: s.sentUnwitnessMessages[s.step].ConsensusStepNumber, FoundConsensus: s.sentUnwitnessMessages[s.step].FoundConsensus}
+						newWitness = &template.WitnessedMessage{Step: stepNow,
+							Id:                   s.ServerIdentity(),
+							SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+							RandomNumber:         s.sentUnwitnessMessages[s.step].RandomNumber,
+							PingMetrix:           s.sentUnwitnessMessages[s.step].PingMetrix,
+							ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber,
+							Messagetype:          3,
+							ConsensusStepNumber:  s.sentUnwitnessMessages[s.step].ConsensusStepNumber,
+							FoundConsensus:       s.sentUnwitnessMessages[s.step].FoundConsensus}
 					}
 					if s.sentUnwitnessMessages[stepNow].ConsensusStepNumber == 1 {
-						newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Nodes: s.sentUnwitnessMessages[stepNow].Nodes, ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber, Messagetype: 3, ConsensusStepNumber: s.sentUnwitnessMessages[s.step].ConsensusStepNumber, FoundConsensus: s.sentUnwitnessMessages[s.step].FoundConsensus}
+						newWitness = &template.WitnessedMessage{Step: stepNow,
+							Id:                   s.ServerIdentity(),
+							SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+							Nodes:                s.sentUnwitnessMessages[stepNow].Nodes,
+							ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber,
+							Messagetype:          3,
+							ConsensusStepNumber:  s.sentUnwitnessMessages[s.step].ConsensusStepNumber,
+							FoundConsensus:       s.sentUnwitnessMessages[s.step].FoundConsensus}
 					}
 					if s.sentUnwitnessMessages[stepNow].ConsensusStepNumber == 2 {
-						newWitness = &template.WitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber, Messagetype: 3, ConsensusStepNumber: s.sentUnwitnessMessages[s.step].ConsensusStepNumber, FoundConsensus: s.sentUnwitnessMessages[s.step].FoundConsensus}
+						newWitness = &template.WitnessedMessage{Step: stepNow,
+							Id:                   s.ServerIdentity(),
+							SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+							ConsensusRoundNumber: s.sentUnwitnessMessages[s.step].ConsensusRoundNumber,
+							Messagetype:          3,
+							ConsensusStepNumber:  s.sentUnwitnessMessages[s.step].ConsensusStepNumber,
+							FoundConsensus:       s.sentUnwitnessMessages[s.step].FoundConsensus}
 					}
 				}
-
 				broadcastWitnessedMessage(s.admissionCommittee, s, newWitness)
 				s.sentThresholdWitnessedMessages[stepNow] = newWitness
 			}
-
 		}
 	}
 }
@@ -518,42 +571,47 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 				}
 
 				s.step = s.step + 1
-				if s.step == 1 {
-					s.majority = len(s.admissionCommittee)/2 + 1
-				}
 				stepNow = s.step
-
 				fmt.Printf("%s increased time step to %d \n", s.ServerIdentity(), stepNow)
 
 				var unwitnessedMessage *template.UnwitnessedMessage
-
 				if stepNow == 1 {
-
+					s.majority = len(s.admissionCommittee)/2 + 1
 					// start membership consensus
 					randomNumber := rand.Intn(s.maxNodeCount * 10000)
-
 					fmt.Printf("%s started the membership consensus process with initial random number is %d \n", s.ServerIdentity(), randomNumber)
-
 					s.tempNewCommittee = s.admissionCommittee
-
 					nodes := s.tempNewCommittee
-
 					strNodes := convertNetworkIdtoStringArray(nodes)
-
-					unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: s.maxConsensusRounds, Messagetype: 2, ConsensusStepNumber: 0}
+					unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step,
+						Id:                   s.ServerIdentity(),
+						SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+						NodesProposal:        strNodes,
+						RandomNumber:         randomNumber,
+						ConsensusRoundNumber: s.maxConsensusRounds,
+						Messagetype:          2,
+						ConsensusStepNumber:  0,
+						FoundConsensus:       false}
 				}
 				if stepNow > 1 {
 					if s.sentUnwitnessMessages[stepNow-1].Messagetype == 0 {
-						unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
+						unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+							Id:          s.ServerIdentity(),
+							SentArray:   convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+							Messagetype: 0}
 					}
 					if s.sentUnwitnessMessages[stepNow-1].Messagetype == 1 {
 						// ping distance multicast
 						if s.sentUnwitnessMessages[stepNow-1].PingMulticastRoundNumber > 1 {
-							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 1, PingDistances: s.sentUnwitnessMessages[stepNow-1].PingDistances, PingMulticastRoundNumber: s.sentUnwitnessMessages[stepNow-1].PingMulticastRoundNumber - 1}
+							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+								Id:                       s.ServerIdentity(),
+								SentArray:                convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+								Messagetype:              1,
+								PingDistances:            s.sentUnwitnessMessages[stepNow-1].PingDistances,
+								PingMulticastRoundNumber: s.sentUnwitnessMessages[stepNow-1].PingMulticastRoundNumber - 1}
 						} else {
 							// make the ping distance matrix and start the ping consensus protocol
 							pingMatrix := make([][]int, len(s.admissionCommittee))
-
 							for i := 0; i < len(s.admissionCommittee); i++ {
 								found := false
 								q := 1
@@ -570,37 +628,51 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 									q = q + 1
 								}
 							}
-							s.tempPingConsensus = pingMatrix
 							pingMatrixStr := convertInt2DtoString1D(pingMatrix, len(s.admissionCommittee), len(s.admissionCommittee))
-
+							s.tempPingConsensus = pingMatrixStr
 							randomNumber := rand.Intn(10000)
 
 							fmt.Printf("%s's initial ping proposal random number is %d \n", s.ServerIdentity(), randomNumber)
 
-							unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), PingMetrix: pingMatrixStr, RandomNumber: randomNumber, ConsensusRoundNumber: s.maxConsensusRounds, Messagetype: 3, ConsensusStepNumber: 0, FoundConsensus: false}
+							unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step,
+								Id:                   s.ServerIdentity(),
+								SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+								PingMetrix:           pingMatrixStr,
+								RandomNumber:         randomNumber,
+								ConsensusRoundNumber: s.maxConsensusRounds,
+								Messagetype:          3,
+								ConsensusStepNumber:  0,
+								FoundConsensus:       false}
 
 						}
 					}
 					if s.sentUnwitnessMessages[stepNow-1].Messagetype == 2 {
 						if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 0 {
-							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Nodes: convertNetworkIdtoStringArray(nodes), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 2, ConsensusStepNumber: 1, FoundConsensus: s.sentUnwitnessMessages[stepNow-1].FoundConsensus}
+							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+								Id:                   s.ServerIdentity(),
+								SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+								Nodes:                convertNetworkIdtoStringArray(nodes),
+								ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber,
+								Messagetype:          2,
+								ConsensusStepNumber:  1,
+								FoundConsensus:       s.sentUnwitnessMessages[stepNow-1].FoundConsensus}
 						}
 						if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 1 {
 							if s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber < s.maxConsensusRounds {
-								// there have been at least one finished consensus round
+								// there has been at least one finished consensus round
 								numSeenConsensus := 0
-
 								for _, twm := range s.recievedThresholdwitnessedMessages[stepNow-2] {
 									if twm.FoundConsensus == true {
 										numSeenConsensus++
 									}
 								}
-
 								if numSeenConsensus > s.majority {
 									// a majority has seen the consensus, so let's move on
+									fmt.Printf("The nodes reach the node consenses in %d number of rounds\n", s.maxConsensusRounds-s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber)
 									for _, twm := range s.recievedThresholdwitnessedMessages[stepNow-2] {
 										if twm.FoundConsensus == true {
 											s.admissionCommittee = convertStringArraytoNetworkId(twm.NodesProposal)
+											fmt.Printf("Node %s reached early nodes consenses with %s and updated the roster \n", s.name, s.admissionCommittee)
 											break
 										}
 									}
@@ -632,14 +704,31 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 										pingDistances[i] = rand.Intn(300)
 									}
 
-									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 1, PingDistances: convertIntArraytoStringArray(pingDistances), PingMulticastRoundNumber: s.multiCastRounds}
+									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+										Id:                       s.ServerIdentity(),
+										SentArray:                convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+										Messagetype:              1,
+										PingDistances:            convertIntArraytoStringArray(pingDistances),
+										PingMulticastRoundNumber: s.multiCastRounds}
 
 								} else {
-									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 2, ConsensusStepNumber: 2}
+									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+										Id:                   s.ServerIdentity(),
+										SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+										ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber,
+										Messagetype:          2,
+										ConsensusStepNumber:  2,
+										FoundConsensus:       s.sentUnwitnessMessages[stepNow-1].FoundConsensus}
 								}
 
 							} else {
-								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 2, ConsensusStepNumber: 2}
+								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+									Id:                   s.ServerIdentity(),
+									SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+									ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber,
+									Messagetype:          2,
+									ConsensusStepNumber:  2,
+									FoundConsensus:       s.sentUnwitnessMessages[stepNow-1].FoundConsensus}
 							}
 
 						}
@@ -720,7 +809,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 							if consensusFound {
 								fmt.Printf("Found consensus with random number %d and the consensus property is %s with length %d \n", randomNumber, properConsensus, len(consensusValue))
-								s.tempConsensusNodes = convertStringArraytoNetworkId(consensusValue)
+								s.tempNewCommittee = convertStringArraytoNetworkId(consensusValue)
 							} else {
 								fmt.Printf("Did not find consensus\n")
 							}
@@ -728,29 +817,30 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 							if s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber > 1 {
 
 								strNodes := make([]string, 0)
-
-								foundConsensus := consensusFound
-
 								if consensusFound {
 									strNodes = consensusValue
-								} else if s.tempConsensusNodes != nil && len(s.tempConsensusNodes) > 0 {
-									strNodes = convertNetworkIdtoStringArray(s.tempConsensusNodes)
-								} else {
-									nodes := s.tempNewCommittee
-									strNodes = convertNetworkIdtoStringArray(nodes)
+								} else if s.tempNewCommittee != nil && len(s.tempNewCommittee) > 0 {
+									strNodes = convertNetworkIdtoStringArray(s.tempNewCommittee)
 								}
 								randomNumber := rand.Intn(s.maxNodeCount * 10000)
 
 								fmt.Printf("%s's new proposal random number is %d \n", s.ServerIdentity(), randomNumber)
 
-								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), NodesProposal: strNodes, RandomNumber: randomNumber, ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber - 1, Messagetype: 2, ConsensusStepNumber: 0, FoundConsensus: foundConsensus}
+								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+									Id:                   s.ServerIdentity(),
+									SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+									NodesProposal:        strNodes,
+									RandomNumber:         randomNumber,
+									ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber - 1,
+									Messagetype:          2,
+									ConsensusStepNumber:  0,
+									FoundConsensus:       consensusFound}
 
 							} else {
 								// end of consensus rounds
+								if s.tempNewCommittee != nil && s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber == 0 {
 
-								if s.tempConsensusNodes != nil && s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber == 0 {
-
-									s.admissionCommittee = s.tempConsensusNodes
+									s.admissionCommittee = s.tempNewCommittee
 
 									s.majority = len(s.admissionCommittee)/2 + 1
 
@@ -781,9 +871,14 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 										pingDistances[i] = rand.Intn(300)
 									}
 
-									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 1, PingDistances: convertIntArraytoStringArray(pingDistances), PingMulticastRoundNumber: s.multiCastRounds}
+									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+										Id:                       s.ServerIdentity(),
+										SentArray:                convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+										Messagetype:              1,
+										PingDistances:            convertIntArraytoStringArray(pingDistances),
+										PingMulticastRoundNumber: s.multiCastRounds}
 
-									s.tempConsensusNodes = nil
+									s.tempNewCommittee = nil
 
 								}
 
@@ -794,7 +889,14 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					}
 					if s.sentUnwitnessMessages[stepNow-1].Messagetype == 3 {
 						if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 0 {
-							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Nodes: convertNetworkIdtoStringArray(nodes), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 3, ConsensusStepNumber: 1, FoundConsensus: s.sentUnwitnessMessages[stepNow-1].FoundConsensus}
+							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+								Id:                   s.ServerIdentity(),
+								SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+								Nodes:                convertNetworkIdtoStringArray(nodes),
+								ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber,
+								Messagetype:          3,
+								ConsensusStepNumber:  1,
+								FoundConsensus:       s.sentUnwitnessMessages[stepNow-1].FoundConsensus}
 						}
 						if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 1 {
 							if s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber < s.maxConsensusRounds {
@@ -813,19 +915,33 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 										if twm.FoundConsensus == true {
 											s.pingConsensus = convertString1DtoInt2D(twm.PingMetrix, len(s.admissionCommittee), len(s.admissionCommittee))
 
-											fmt.Printf("%s end of ping matrix consensus with ping matrix %s", s.name, s.pingConsensus)
+											fmt.Printf("%s early end of ping matrix consensus with ping matrix %s in %d consensus rounds \n", s.name, s.pingConsensus, s.maxConsensusRounds-s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber)
 
-											unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
+											unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+												Id:          s.ServerIdentity(),
+												SentArray:   convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+												Messagetype: 0}
 											break
 										}
 									}
 
 								} else {
-									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 3, ConsensusStepNumber: 2}
+									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+										Id:                   s.ServerIdentity(),
+										SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+										ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber,
+										Messagetype:          3,
+										ConsensusStepNumber:  2}
 								}
 
 							} else {
-								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber, Messagetype: 3, ConsensusStepNumber: 2}
+								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+									Id:                   s.ServerIdentity(),
+									SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+									ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber,
+									Messagetype:          3,
+									ConsensusStepNumber:  2,
+									FoundConsensus:       s.sentUnwitnessMessages[stepNow-1].FoundConsensus}
 							}
 
 						}
@@ -923,18 +1039,29 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 								fmt.Printf("%s's new proposal random number is %d \n", s.ServerIdentity(), randomNumber)
 
-								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), PingMetrix: strPingMtrx, RandomNumber: randomNumber, ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber - 1, Messagetype: 3, ConsensusStepNumber: 0, FoundConsensus: consensusFound}
+								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+									Id:                   s.ServerIdentity(),
+									SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+									PingMetrix:           strPingMtrx,
+									RandomNumber:         randomNumber,
+									ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber - 1,
+									Messagetype:          3,
+									ConsensusStepNumber:  0,
+									FoundConsensus:       consensusFound}
 
 							} else {
 								// end of consensus rounds
 
-								if s.tempPingConsensus != nil && s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber == 1 {
+								if s.tempPingConsensus != nil && s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber == 0 {
 
 									s.pingConsensus = convertString1DtoInt2D(s.tempPingConsensus, len(s.admissionCommittee), len(s.admissionCommittee))
 
 									fmt.Printf("%s end of ping matrix consensus with ping matrix %s", s.name, s.pingConsensus)
 
-									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow, Id: s.ServerIdentity(), SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount), Messagetype: 0}
+									unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
+										Id:          s.ServerIdentity(),
+										SentArray:   convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+										Messagetype: 0}
 
 								}
 
@@ -960,7 +1087,9 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 				unAckedUnwitnessedMessages := s.recievedTempUnwitnessedMessages[stepNow]
 				for _, uauwm := range unAckedUnwitnessedMessages {
 					s.recievedUnwitnessedMessages[uauwm.Step] = append(s.recievedUnwitnessedMessages[uauwm.Step], uauwm)
-					newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(), UnwitnessedMessage: uauwm, SentArray: convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount)}
+					newAck := &template.AcknowledgementMessage{Id: s.ServerIdentity(),
+						UnwitnessedMessage: uauwm,
+						SentArray:          convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount)}
 					requesterIdentity := uauwm.Id
 					unicastAcknowledgementMessage(requesterIdentity, s, newAck)
 					s.sentAcknowledgementMessages[uauwm.Step] = append(s.sentAcknowledgementMessages[uauwm.Step], newAck)
@@ -1033,7 +1162,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 		sentLock:  new(sync.Mutex),
 		delivLock: new(sync.Mutex),
 
-		tempConsensusNodes: nil,
+		tempNewCommittee: nil,
 	}
 	if err := s.RegisterHandlers(s.SetGenesisSet, s.InitRequest); err != nil {
 		return nil, errors.New("couldn't register messages")
