@@ -17,6 +17,9 @@ import (
 var unwitnessedMessageMsgID network.MessageTypeID
 var witnessedMessageMsgID network.MessageTypeID
 var acknowledgementMessageMsgID network.MessageTypeID
+var nodeJoinRequestMessageMsgID network.MessageTypeID
+var nodeJoinResponseMessageMsgID network.MessageTypeID
+var nodeJoinConfirmationMessageMsgID network.MessageTypeID
 
 var templateID onet.ServiceID
 
@@ -28,6 +31,9 @@ func init() {
 	unwitnessedMessageMsgID = network.RegisterMessage(&template.UnwitnessedMessage{})
 	witnessedMessageMsgID = network.RegisterMessage(&template.WitnessedMessage{})
 	acknowledgementMessageMsgID = network.RegisterMessage(&template.AcknowledgementMessage{})
+	nodeJoinRequestMessageMsgID = network.RegisterMessage(&template.NodeJoinRequest{})
+	nodeJoinResponseMessageMsgID = network.RegisterMessage(&template.NodeJoinResponse{})
+	nodeJoinConfirmationMessageMsgID = network.RegisterMessage(&template.NodeJoinConfirmation{})
 }
 
 type Service struct {
@@ -107,6 +113,9 @@ type Service struct {
 
 	bufferedCatchupMessages     []*template.CatchUpMessage
 	bufferedCatchupMessagesLock *sync.Mutex
+
+	receivedNodeJoinResponse    []*template.NodeJoinResponse
+	receivedEnoughNodeResponses bool
 }
 
 var storageID = []byte("main")
@@ -166,6 +175,46 @@ func unicastAcknowledgementMessage(memberNode *network.ServerIdentity, s *Servic
 	if e != nil {
 		panic(e)
 	}
+
+}
+
+func broadcastJoinRequest(memberNodes []*network.ServerIdentity, s *Service, message *template.NodeJoinRequest) {
+	for _, node := range memberNodes {
+		e := s.SendRaw(node, message)
+		if e != nil {
+			panic(e)
+		}
+	}
+}
+
+func broadcastNodeJoinConfirmationMessage(memberNodes []*network.ServerIdentity, s *Service, message *template.NodeJoinConfirmation) {
+	for _, node := range memberNodes {
+		e := s.SendRaw(node, message)
+		if e != nil {
+			panic(e)
+		}
+	}
+}
+
+func unicastNodeResponseMessage(memberNode *network.ServerIdentity, s *Service, message *template.NodeJoinResponse) {
+	e := s.SendRaw(memberNode, message)
+
+	if e != nil {
+		panic(e)
+	}
+
+}
+
+func (s *Service) JoinRequest(req *template.JoinRequest) (*template.JoinResponse, error) {
+
+	nodeJoinRequest := &template.NodeJoinRequest{Id: s.ServerIdentity()}
+
+	s.receivedNodeJoinResponse = make([]*template.NodeJoinResponse, 0)
+	s.receivedEnoughNodeResponses = false
+
+	broadcastJoinRequest(s.admissionCommittee, s, nodeJoinRequest)
+
+	return &template.JoinResponse{}, nil
 
 }
 
@@ -1123,6 +1172,29 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 	}
 }
 
+func handleJoinRequestMessage(s *Service, req *template.NodeJoinRequest) {
+
+	newResponse := &template.NodeJoinResponse{Id: s.ServerIdentity()}
+	requesterIdentity := req.Id
+	unicastNodeResponseMessage(requesterIdentity, s, newResponse)
+
+}
+
+func handleJoinResponseMessage(s *Service, req *template.NodeJoinResponse) {
+	s.receivedNodeJoinResponse = append(s.receivedNodeJoinResponse, req)
+	if !s.receivedEnoughNodeResponses {
+		if len(s.receivedNodeJoinResponse) > len(s.admissionCommittee)/2+1 {
+			s.receivedEnoughNodeResponses = true
+			newNodeJoinConfirmation := &template.NodeJoinConfirmation{Id: s.ServerIdentity()}
+			broadcastNodeJoinConfirmationMessage(s.admissionCommittee, s, newNodeJoinConfirmation)
+		}
+	}
+}
+
+func handleJoinConfirmationMessage(s *Service, req *template.NodeJoinConfirmation) {
+	s.tempNewCommittee = append(s.tempNewCommittee, req.Id)
+}
+
 func newService(c *onet.Context) (onet.Service, error) {
 	s := &Service{
 		ServiceProcessor: onet.NewServiceProcessor(c),
@@ -1185,7 +1257,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		tempNewCommittee: nil,
 	}
-	if err := s.RegisterHandlers(s.SetGenesisSet, s.InitRequest); err != nil {
+	if err := s.RegisterHandlers(s.SetGenesisSet, s.InitRequest, s.JoinRequest); err != nil {
 		return nil, errors.New("couldn't register messages")
 	}
 
@@ -1292,6 +1364,38 @@ func newService(c *onet.Context) (onet.Service, error) {
 		return nil
 	})
 
+	s.RegisterProcessorFunc(nodeJoinRequestMessageMsgID, func(arg1 *network.Envelope) error {
+
+		req, ok := arg1.Msg.(*template.NodeJoinRequest)
+		if !ok {
+			log.Error(s.ServerIdentity(), "failed to cast to node join request message")
+			return nil
+		}
+		handleJoinRequestMessage(s, req)
+		return nil
+	})
+
+	s.RegisterProcessorFunc(nodeJoinResponseMessageMsgID, func(arg1 *network.Envelope) error {
+
+		req, ok := arg1.Msg.(*template.NodeJoinResponse)
+		if !ok {
+			log.Error(s.ServerIdentity(), "failed to cast to node join response message")
+			return nil
+		}
+		handleJoinResponseMessage(s, req)
+		return nil
+	})
+
+	s.RegisterProcessorFunc(nodeJoinConfirmationMessageMsgID, func(arg1 *network.Envelope) error {
+
+		req, ok := arg1.Msg.(*template.NodeJoinConfirmation)
+		if !ok {
+			log.Error(s.ServerIdentity(), "failed to cast to node join confirmation message")
+			return nil
+		}
+		handleJoinConfirmationMessage(s, req)
+		return nil
+	})
 	return s, nil
 }
 

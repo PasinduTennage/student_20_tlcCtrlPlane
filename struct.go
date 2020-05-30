@@ -111,3 +111,24 @@ type CatchUpMessage struct {
 type ArrayWitnessedMessages struct {
 	Messages []*WitnessedMessage
 }
+
+type JoinRequest struct {
+}
+
+// SignatureResponse is what the Cosi service will reply to clients.
+type JoinResponse struct {
+}
+
+type NodeJoinRequest struct {
+	Id *network.ServerIdentity
+}
+
+// SignatureResponse is what the Cosi service will reply to clients.
+type NodeJoinResponse struct {
+	Id *network.ServerIdentity
+}
+
+type NodeJoinConfirmation struct {
+	//ackedNodes []string
+	Id *network.ServerIdentity
+}
