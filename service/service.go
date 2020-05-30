@@ -667,8 +667,8 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 										numSeenConsensus++
 									}
 								}
-								if numSeenConsensus > s.majority {
-									// a majority has seen the consensus, so let's move on
+								if numSeenConsensus > 0 {
+									// someone has seen the consensus, so let's move on
 									fmt.Printf("The nodes reach the node consenses in %d number of rounds\n", s.maxConsensusRounds-s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber)
 									for _, twm := range s.recievedThresholdwitnessedMessages[stepNow-2] {
 										if twm.FoundConsensus == true {
@@ -910,8 +910,8 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 									}
 								}
 
-								if numSeenConsensus > s.majority {
-									// a majority has seen the consensus, so let's move on
+								if numSeenConsensus > 1 {
+									// someone has seen the consensus, so let's move on
 									for _, twm := range s.recievedThresholdwitnessedMessages[stepNow-2] {
 										if twm.FoundConsensus == true {
 											s.pingConsensus = convertString1DtoInt2D(twm.PingMetrix, len(s.admissionCommittee), len(s.admissionCommittee))
