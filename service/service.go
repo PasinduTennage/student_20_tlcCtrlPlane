@@ -628,6 +628,12 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 									}
 									q = q + 1
 								}
+								if found == false {
+									pingMatrix[i] = make([]int, len(s.admissionCommittee))
+									for b := 0; b < len(s.admissionCommittee); b++ {
+										pingMatrix[i][b] = -1
+									}
+								}
 							}
 							pingMatrixStr := convertInt2DtoString1D(pingMatrix, len(s.admissionCommittee), len(s.admissionCommittee))
 							s.tempPingConsensus = pingMatrixStr
