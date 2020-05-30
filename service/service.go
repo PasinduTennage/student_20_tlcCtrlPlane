@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"strconv"
 	"sync"
+	"time"
 )
 
 var unwitnessedMessageMsgID network.MessageTypeID
@@ -1071,8 +1072,22 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					}
 				}
 
-				if stepNow > s.maxTime {
-					return
+				if unwitnessedMessage.Messagetype == 0 {
+					// end of control plane, sleep for some time, and then start a new control plane
+					time.Sleep(5 * time.Second) // analogous to one CRUX round
+					randomNumber := rand.Intn(s.maxNodeCount * 10000)
+					fmt.Printf("%s started the membership consensus process with initial random number is %d \n", s.ServerIdentity(), randomNumber)
+					nodes := s.tempNewCommittee
+					strNodes := convertNetworkIdtoStringArray(nodes)
+					unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step,
+						Id:                   s.ServerIdentity(),
+						SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+						NodesProposal:        strNodes,
+						RandomNumber:         randomNumber,
+						ConsensusRoundNumber: s.maxConsensusRounds,
+						Messagetype:          2,
+						ConsensusStepNumber:  0,
+						FoundConsensus:       false}
 				}
 
 				value, ok := s.sentUnwitnessMessages[stepNow]

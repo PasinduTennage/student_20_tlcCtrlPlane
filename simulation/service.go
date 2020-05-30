@@ -94,6 +94,6 @@ func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 		_, _ = clients[i].SendInitRequest(config.Roster.List[i])
 	}
 
-	time.Sleep(20 * time.Second)
+	time.Sleep(50 * time.Second)
 	return nil
 }
