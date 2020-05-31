@@ -132,3 +132,9 @@ type NodeJoinConfirmation struct {
 	//ackedNodes []string
 	Id *network.ServerIdentity
 }
+
+type JoinAdmissionCommittee struct {
+	//ackedNodes []string
+	NewCommitee []string
+	Step        int
+}

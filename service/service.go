@@ -20,6 +20,7 @@ var acknowledgementMessageMsgID network.MessageTypeID
 var nodeJoinRequestMessageMsgID network.MessageTypeID
 var nodeJoinResponseMessageMsgID network.MessageTypeID
 var nodeJoinConfirmationMessageMsgID network.MessageTypeID
+var nodeJoinAdmissionCommitteeMessageMsgID network.MessageTypeID
 
 var templateID onet.ServiceID
 
@@ -53,6 +54,7 @@ type Service struct {
 
 	admissionCommittee []*network.ServerIdentity
 	tempNewCommittee   []*network.ServerIdentity
+	newNodes           []*network.ServerIdentity
 
 	step     int
 	stepLock *sync.Mutex
@@ -116,6 +118,8 @@ type Service struct {
 
 	receivedNodeJoinResponse    []*template.NodeJoinResponse
 	receivedEnoughNodeResponses bool
+
+	receivedAdmissionCommitteeJoin bool
 }
 
 var storageID = []byte("main")
@@ -172,6 +176,14 @@ func unicastAcknowledgementMessage(memberNode *network.ServerIdentity, s *Servic
 
 	s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
 
+	if e != nil {
+		panic(e)
+	}
+
+}
+
+func unicastCommitteJoinMessage(memberNode *network.ServerIdentity, s *Service, message *template.JoinAdmissionCommittee) {
+	e := s.SendRaw(memberNode, message)
 	if e != nil {
 		panic(e)
 	}
@@ -630,7 +642,8 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					// start membership consensus
 					randomNumber := rand.Intn(s.maxNodeCount * 10000)
 					fmt.Printf("%s started the membership consensus process with initial random number is %d \n", s.ServerIdentity(), randomNumber)
-					s.tempNewCommittee = s.admissionCommittee
+					s.tempNewCommittee = append(s.admissionCommittee, s.newNodes...)
+					s.newNodes = make([]*network.ServerIdentity, 0)
 					nodes := s.tempNewCommittee
 					strNodes := convertNetworkIdtoStringArray(nodes)
 					unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step,
@@ -750,8 +763,14 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 													break
 												}
 											}
+											// send a message to the newNode
+											joinCommitteMessage := &template.JoinAdmissionCommittee{Step: stepNow, NewCommitee: convertNetworkIdtoStringArray(s.admissionCommittee)}
+											unicastCommitteJoinMessage(s.admissionCommittee[i], s, joinCommitteMessage)
 										}
+
 									}
+
+									time.Sleep(1 * time.Second)
 
 									// calculate ping distances, for now lets mock the ping distances
 
@@ -1132,7 +1151,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					time.Sleep(5 * time.Second) // analogous to one CRUX round
 					randomNumber := rand.Intn(s.maxNodeCount * 10000)
 					fmt.Printf("%s started the membership consensus process with initial random number is %d \n", s.ServerIdentity(), randomNumber)
-					nodes := s.tempNewCommittee
+					nodes := append(s.admissionCommittee, s.newNodes...)
 					strNodes := convertNetworkIdtoStringArray(nodes)
 					unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step,
 						Id:                   s.ServerIdentity(),
@@ -1192,7 +1211,61 @@ func handleJoinResponseMessage(s *Service, req *template.NodeJoinResponse) {
 }
 
 func handleJoinConfirmationMessage(s *Service, req *template.NodeJoinConfirmation) {
-	s.tempNewCommittee = append(s.tempNewCommittee, req.Id)
+	s.newNodes = append(s.newNodes, req.Id)
+}
+
+func handleJoinAdmissionCommittee(s *Service, req *template.JoinAdmissionCommittee) {
+	defer s.stepLock.Unlock()
+	s.stepLock.Lock()
+
+	if !s.receivedAdmissionCommitteeJoin {
+		s.receivedAdmissionCommitteeJoin = true
+		s.step = req.Step
+		s.admissionCommittee = convertStringArraytoNetworkId(req.NewCommitee)
+		s.majority = len(s.admissionCommittee)/2 + 1
+
+		s.sent = make([][]int, s.maxNodeCount)
+
+		for i := 0; i < s.maxNodeCount; i++ {
+			s.sent[i] = make([]int, s.maxNodeCount)
+			for j := 0; j < s.maxNodeCount; j++ {
+				s.sent[i][j] = 0
+			}
+		}
+
+		s.deliv = make([]int, s.maxNodeCount)
+
+		for j := 0; j < s.maxNodeCount; j++ {
+			s.deliv[j] = 0
+		}
+
+		s.name = string(s.ServerIdentity().Address)
+
+		s.vectorClockMemberList = make([]string, s.maxNodeCount)
+
+		for i := 0; i < len(s.admissionCommittee); i++ {
+			s.vectorClockMemberList[i] = string(s.admissionCommittee[i].Address)
+		}
+		for i := len(s.admissionCommittee); i < s.maxNodeCount; i++ {
+			s.vectorClockMemberList[i] = ""
+		}
+
+		pingDistances := make([]int, len(s.admissionCommittee))
+		for i := 0; i < len(s.admissionCommittee); i++ {
+			pingDistances[i] = rand.Intn(300)
+		}
+
+		unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step,
+			Id:                       s.ServerIdentity(),
+			SentArray:                convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
+			Messagetype:              1,
+			PingDistances:            convertIntArraytoStringArray(pingDistances),
+			PingMulticastRoundNumber: s.multiCastRounds}
+
+		broadcastUnwitnessedMessage(s.admissionCommittee, s, unwitnessedMessage)
+		s.sentUnwitnessMessages[s.step] = unwitnessedMessage
+
+	}
 }
 
 func newService(c *onet.Context) (onet.Service, error) {
@@ -1252,10 +1325,14 @@ func newService(c *onet.Context) (onet.Service, error) {
 		bufferedCatchupMessages:     make([]*template.CatchUpMessage, 0),
 		bufferedCatchupMessagesLock: new(sync.Mutex),
 
+		newNodes: make([]*network.ServerIdentity, 0),
+
 		sentLock:  new(sync.Mutex),
 		delivLock: new(sync.Mutex),
 
 		tempNewCommittee: nil,
+
+		receivedAdmissionCommitteeJoin: false,
 	}
 	if err := s.RegisterHandlers(s.SetGenesisSet, s.InitRequest, s.JoinRequest); err != nil {
 		return nil, errors.New("couldn't register messages")
@@ -1394,6 +1471,17 @@ func newService(c *onet.Context) (onet.Service, error) {
 			return nil
 		}
 		handleJoinConfirmationMessage(s, req)
+		return nil
+	})
+
+	s.RegisterProcessorFunc(nodeJoinAdmissionCommitteeMessageMsgID, func(arg1 *network.Envelope) error {
+
+		req, ok := arg1.Msg.(*template.JoinAdmissionCommittee)
+		if !ok {
+			log.Error(s.ServerIdentity(), "failed to cast to node join admission committee message")
+			return nil
+		}
+		handleJoinAdmissionCommittee(s, req)
 		return nil
 	})
 	return s, nil
