@@ -35,6 +35,7 @@ func init() {
 	nodeJoinRequestMessageMsgID = network.RegisterMessage(&template.NodeJoinRequest{})
 	nodeJoinResponseMessageMsgID = network.RegisterMessage(&template.NodeJoinResponse{})
 	nodeJoinConfirmationMessageMsgID = network.RegisterMessage(&template.NodeJoinConfirmation{})
+	nodeJoinAdmissionCommitteeMessageMsgID = network.RegisterMessage(&template.JoinAdmissionCommittee{})
 }
 
 type Service struct {
@@ -770,7 +771,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 									}
 
-									time.Sleep(1 * time.Second)
+									time.Sleep(2 * time.Second)
 
 									// calculate ping distances, for now lets mock the ping distances
 
@@ -935,9 +936,13 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 													break
 												}
 											}
+											joinCommitteMessage := &template.JoinAdmissionCommittee{Step: stepNow, NewCommitee: convertNetworkIdtoStringArray(s.admissionCommittee)}
+											unicastCommitteJoinMessage(s.admissionCommittee[i], s, joinCommitteMessage)
 										}
 
 									}
+
+									time.Sleep(2 * time.Second)
 
 									// calculate ping distances, for now lets mock the ping distances
 
@@ -1151,7 +1156,9 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					time.Sleep(5 * time.Second) // analogous to one CRUX round
 					randomNumber := rand.Intn(s.maxNodeCount * 10000)
 					fmt.Printf("%s started the membership consensus process with initial random number is %d \n", s.ServerIdentity(), randomNumber)
-					nodes := append(s.admissionCommittee, s.newNodes...)
+					s.tempNewCommittee = append(s.admissionCommittee, s.newNodes...)
+					s.newNodes = make([]*network.ServerIdentity, 0)
+					nodes := s.tempNewCommittee
 					strNodes := convertNetworkIdtoStringArray(nodes)
 					unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step,
 						Id:                   s.ServerIdentity(),
@@ -1220,6 +1227,7 @@ func handleJoinAdmissionCommittee(s *Service, req *template.JoinAdmissionCommitt
 
 	if !s.receivedAdmissionCommitteeJoin {
 		s.receivedAdmissionCommitteeJoin = true
+		fmt.Printf("%s joined the admission committee at step %d \n", s.ServerIdentity(), req.Step)
 		s.step = req.Step
 		s.admissionCommittee = convertStringArraytoNetworkId(req.NewCommitee)
 		s.majority = len(s.admissionCommittee)/2 + 1
@@ -1271,9 +1279,8 @@ func handleJoinAdmissionCommittee(s *Service, req *template.JoinAdmissionCommitt
 func newService(c *onet.Context) (onet.Service, error) {
 	s := &Service{
 		ServiceProcessor: onet.NewServiceProcessor(c),
-
-		step:     0,
-		stepLock: new(sync.Mutex),
+		step:             0,
+		stepLock:         new(sync.Mutex),
 
 		maxTime: 1000,
 

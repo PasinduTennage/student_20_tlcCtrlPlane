@@ -78,3 +78,13 @@ func (c *Client) SendInitRequest(dst *network.ServerIdentity) (*InitResponse, er
 	}
 	return reply, nil
 }
+
+func (c *Client) SendJoinRequest(dst *network.ServerIdentity) (*JoinResponse, error) {
+	serviceReq := &JoinRequest{}
+	reply := &JoinResponse{}
+	err := c.SendProtobuf(dst, serviceReq, reply)
+	if err != nil {
+		return nil, err
+	}
+	return reply, nil
+}
