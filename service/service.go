@@ -219,7 +219,7 @@ func unicastNodeResponseMessage(memberNode *network.ServerIdentity, s *Service, 
 }
 
 func (s *Service) JoinRequest(req *template.JoinRequest) (*template.JoinResponse, error) {
-
+	s.stepLock.Lock()
 	nodeJoinRequest := &template.NodeJoinRequest{Id: s.ServerIdentity()}
 
 	s.receivedNodeJoinResponse = make([]*template.NodeJoinResponse, 0)
@@ -425,6 +425,9 @@ func handleUnwitnessedMessage(s *Service, req *template.UnwitnessedMessage) {
 	}
 
 	reqIndex := findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+	for reqIndex == -1 {
+		reqIndex = findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+	}
 
 	s.deliv[reqIndex] = s.deliv[reqIndex] + 1
 
@@ -1222,8 +1225,6 @@ func handleJoinConfirmationMessage(s *Service, req *template.NodeJoinConfirmatio
 }
 
 func handleJoinAdmissionCommittee(s *Service, req *template.JoinAdmissionCommittee) {
-	defer s.stepLock.Unlock()
-	s.stepLock.Lock()
 
 	if !s.receivedAdmissionCommitteeJoin {
 		s.receivedAdmissionCommitteeJoin = true
@@ -1273,6 +1274,8 @@ func handleJoinAdmissionCommittee(s *Service, req *template.JoinAdmissionCommitt
 		broadcastUnwitnessedMessage(s.admissionCommittee, s, unwitnessedMessage)
 		s.sentUnwitnessMessages[s.step] = unwitnessedMessage
 
+		s.stepLock.Unlock()
+
 	}
 }
 
@@ -1284,7 +1287,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		maxTime: 1000,
 
-		maxNodeCount: 16,
+		maxNodeCount: 30,
 
 		maxConsensusRounds: 128,
 

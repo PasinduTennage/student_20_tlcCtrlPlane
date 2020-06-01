@@ -100,8 +100,15 @@ func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 		_, _ = clients[i].SendJoinRequest(config.Roster.List[i])
 	}
 
+	time.Sleep(5 * time.Second)
+
 	for i := 5; i < 10; i++ {
 		nodes = append(nodes, config.Roster.List[i])
+	}
+
+	strNodes = convertNetworkIdtoStringArray(nodes)
+	for i := 10; i < len(config.Roster.List); i++ {
+		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], strNodes)
 	}
 
 	time.Sleep(5 * time.Second)
@@ -109,12 +116,30 @@ func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 	for i := 10; i < 15; i++ {
 		_, _ = clients[i].SendJoinRequest(config.Roster.List[i])
 	}
+	time.Sleep(5 * time.Second)
 
-	//time.Sleep(5 * time.Second)
-	//
-	//for i := 9; i < 11; i++ {
-	//	_, _ = clients[i].SendJoinRequest(config.Roster.List[i])
-	//}
+	for i := 10; i < 15; i++ {
+		nodes = append(nodes, config.Roster.List[i])
+	}
+	strNodes = convertNetworkIdtoStringArray(nodes)
+	for i := 15; i < len(config.Roster.List); i++ {
+		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], strNodes)
+	}
+
+	time.Sleep(5 * time.Second)
+
+	for i := 15; i < 17; i++ {
+		_, _ = clients[i].SendJoinRequest(config.Roster.List[i])
+	}
+	time.Sleep(5 * time.Second)
+
+	for i := 15; i < 17; i++ {
+		nodes = append(nodes, config.Roster.List[i])
+	}
+	strNodes = convertNetworkIdtoStringArray(nodes)
+	for i := 17; i < len(config.Roster.List); i++ {
+		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], strNodes)
+	}
 
 	time.Sleep(100 * time.Second)
 
