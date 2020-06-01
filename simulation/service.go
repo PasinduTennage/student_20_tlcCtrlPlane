@@ -140,7 +140,6 @@ func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 	for i := 17; i < len(config.Roster.List); i++ {
 		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], strNodes)
 	}
-
 	time.Sleep(100 * time.Second)
 
 	return nil

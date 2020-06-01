@@ -134,7 +134,6 @@ type NodeJoinConfirmation struct {
 }
 
 type JoinAdmissionCommittee struct {
-	//ackedNodes []string
 	NewCommitee []string
 	Step        int
 }
