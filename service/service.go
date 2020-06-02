@@ -1174,6 +1174,9 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 						FoundConsensus:       false}
 				}
 
+				if stepNow > 200 {
+					return
+				}
 				value, ok := s.sentUnwitnessMessages[stepNow]
 
 				if !ok {
