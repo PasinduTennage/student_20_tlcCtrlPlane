@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/BurntSushi/toml"
 	"github.com/dedis/cothority_template"
 	"go.dedis.ch/onet/v3"
@@ -141,6 +142,6 @@ func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], strNodes)
 	}
 	time.Sleep(100 * time.Second)
-
+	fmt.Printf("End of simulations\n")
 	return nil
 }
