@@ -88,3 +88,12 @@ func (c *Client) SendJoinRequest(dst *network.ServerIdentity) (*JoinResponse, er
 	}
 	return reply, nil
 }
+func (c *Client) SendRosterRequest(dst *network.ServerIdentity, roster *onet.Roster) (*RosterNodesResponse, error) {
+	serviceReq := &RosterNodesRequest{Roster: roster}
+	reply := &RosterNodesResponse{}
+	err := c.SendProtobuf(dst, serviceReq, reply)
+	if err != nil {
+		return nil, err
+	}
+	return reply, nil
+}

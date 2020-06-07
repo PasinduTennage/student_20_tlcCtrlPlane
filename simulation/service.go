@@ -8,6 +8,7 @@ import (
 	"go.dedis.ch/onet/v3"
 	"go.dedis.ch/onet/v3/log"
 	"go.dedis.ch/onet/v3/network"
+	"strconv"
 	"time"
 )
 
@@ -74,21 +75,23 @@ func (s *SimulationService) Node(config *onet.SimulationConfig) error {
 // Run is used on the destination machines and runs a number of
 // rounds
 func (s *SimulationService) Run(config *onet.SimulationConfig) error {
-	nodes := make([]*network.ServerIdentity, 5)
+	nodes := make([]string, 5)
 	clients := make([]*template.Client, len(config.Roster.List))
 
 	for i := 0; i < len(config.Roster.List); i++ {
 		clients[i] = template.NewClient()
 	}
 
-	for i := 0; i < 5; i++ {
-		nodes[i] = config.Roster.List[i]
+	for i := 0; i < len(config.Roster.List); i++ {
+		_, _ = clients[i].SendRosterRequest(config.Roster.List[i], config.Roster)
 	}
 
-	strNodes := convertNetworkIdtoStringArray(nodes)
+	for i := 0; i < 5; i++ {
+		nodes[i] = strconv.Itoa(i)
+	}
 
 	for i := 0; i < len(config.Roster.List); i++ {
-		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], strNodes)
+		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], nodes)
 	}
 
 	for i := 0; i < 5; i++ {

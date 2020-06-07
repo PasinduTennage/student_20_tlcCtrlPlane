@@ -137,3 +137,11 @@ type JoinAdmissionCommittee struct {
 	NewCommitee []string
 	Step        int
 }
+
+type RosterNodesRequest struct {
+	Roster *onet.Roster
+}
+
+// SignatureResponse is what the Cosi service will reply to clients.
+type RosterNodesResponse struct {
+}

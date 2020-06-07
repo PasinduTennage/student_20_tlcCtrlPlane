@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/dedis/cothority_template"
@@ -56,6 +55,8 @@ type Service struct {
 	admissionCommittee []*network.ServerIdentity
 	tempNewCommittee   []*network.ServerIdentity
 	newNodes           []*network.ServerIdentity
+
+	rosterNodes []*network.ServerIdentity
 
 	step     int
 	stepLock *sync.Mutex
@@ -253,8 +254,12 @@ func (s *Service) SetGenesisSet(req *template.GenesisNodesRequest) (*template.Ge
 
 	defer s.stepLock.Unlock()
 	s.stepLock.Lock()
-
-	s.admissionCommittee = convertStringArraytoNetworkId(req.Nodes)
+	strNodes := req.Nodes
+	s.admissionCommittee = make([]*network.ServerIdentity, 0)
+	for i := 0; i < len(strNodes); i++ {
+		intNode, _ := strconv.Atoi(strNodes[i])
+		s.admissionCommittee = append(s.admissionCommittee, s.rosterNodes[intNode])
+	}
 
 	s.majority = len(s.admissionCommittee)
 
@@ -287,6 +292,16 @@ func (s *Service) SetGenesisSet(req *template.GenesisNodesRequest) (*template.Ge
 	fmt.Printf("%s set the genesis set \n", s.name)
 
 	return &template.GenesisNodesResponse{}, nil
+}
+
+func (s *Service) SetRoster(req *template.RosterNodesRequest) (*template.RosterNodesResponse, error) {
+
+	defer s.stepLock.Unlock()
+	s.stepLock.Lock()
+
+	s.rosterNodes = req.Roster.List
+
+	return &template.RosterNodesResponse{}, nil
 }
 
 func (s *Service) NewProtocol(tn *onet.TreeNodeInstance, conf *onet.GenericConfig) (onet.ProtocolInstance, error) {
@@ -345,27 +360,6 @@ func convertString1DtoInt2D(array []string, rows int, cols int) [][]int {
 
 	return intArray
 
-}
-
-func convertNetworkIdtoStringArray(nodeIds []*network.ServerIdentity) []string {
-	stringArray := make([]string, len(nodeIds))
-	for i := 0; i < len(nodeIds); i++ {
-		jsonNodeId, _ := json.Marshal(nodeIds[i])
-		stringArray[i] = string(jsonNodeId)
-	}
-	return stringArray
-}
-
-func convertStringArraytoNetworkId(array []string) []*network.ServerIdentity {
-	IdArray := make([]*network.ServerIdentity, len(array))
-	for i := 0; i < len(array); i++ {
-		byteArray := []byte(array[i])
-		var m network.ServerIdentity
-		_ = json.Unmarshal(byteArray, &m)
-		IdArray[i] = &m
-	}
-
-	return IdArray
 }
 
 func findGlobalMaxRandomNumber(messages []*template.WitnessedMessage) int {
@@ -478,11 +472,9 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 			for _, ack := range s.recievedAcknowledgesMessages[stepNow] {
 				ackId := ack.Id
 				exists := false
-				ackIdJson, _ := json.Marshal(ackId)
 				for _, num := range nodes {
-					numJson, _ := json.Marshal(num)
 
-					if string(numJson) == string(ackIdJson) {
+					if string(num.Address) == string(ackId.Address) {
 						exists = true
 						break
 					}
@@ -609,11 +601,10 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 			nodes := make([]*network.ServerIdentity, 0)
 			for _, twm := range s.recievedThresholdwitnessedMessages[stepNow] {
 				twmId := twm.Id
-				twmIdJson, _ := json.Marshal(twmId)
+
 				exists := false
 				for _, num := range nodes {
-					numJson, _ := json.Marshal(num)
-					if string(numJson) == string(twmIdJson) {
+					if string(num.Address) == string(twmId.Address) {
 						exists = true
 						break
 					}
@@ -626,10 +617,8 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 			if len(nodes) >= s.majority {
 				s.recievedWitnessedMessagesBool[stepNow] = true
 				for _, nodeId := range nodes {
-					jsnNodeId, _ := json.Marshal(nodeId)
 					for _, twm := range s.recievedThresholdwitnessedMessages[stepNow] {
-						jsnTwmId, _ := json.Marshal(twm.Id)
-						if string(jsnNodeId) == string(jsnTwmId) {
+						if string(nodeId.Address) == string(twm.Id.Address) {
 							s.recievedThresholdStepWitnessedMessages[stepNow] = append(s.recievedThresholdStepWitnessedMessages[stepNow], twm)
 							break
 						}
@@ -649,7 +638,16 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					s.tempNewCommittee = append(s.admissionCommittee, s.newNodes...)
 					s.newNodes = make([]*network.ServerIdentity, 0)
 					nodes := s.tempNewCommittee
-					strNodes := convertNetworkIdtoStringArray(nodes)
+					strNodes := make([]string, len(nodes))
+					for r := 0; r < len(nodes); r++ {
+						for p := 0; p < len(s.rosterNodes); p++ {
+							if string(s.rosterNodes[p].Address) == string(nodes[r].Address) {
+								strNodes[r] = strconv.Itoa(p)
+								break
+							}
+						}
+					}
+
 					unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step,
 						Id:                   s.ServerIdentity(),
 						SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
@@ -721,10 +719,19 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					}
 					if s.sentUnwitnessMessages[stepNow-1].Messagetype == 2 {
 						if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 0 {
+							strNodes := make([]string, len(nodes))
+							for r := 0; r < len(nodes); r++ {
+								for p := 0; p < len(s.rosterNodes); p++ {
+									if string(s.rosterNodes[p].Address) == string(nodes[r].Address) {
+										strNodes[r] = strconv.Itoa(p)
+										break
+									}
+								}
+							}
 							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
 								Id:                   s.ServerIdentity(),
 								SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
-								Nodes:                convertNetworkIdtoStringArray(nodes),
+								Nodes:                strNodes,
 								ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber,
 								Messagetype:          2,
 								ConsensusStepNumber:  1,
@@ -744,7 +751,11 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 									fmt.Printf("The nodes reach the node consenses in %d number of rounds\n", s.maxConsensusRounds-s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber)
 									for _, twm := range s.recievedThresholdwitnessedMessages[stepNow-2] {
 										if twm.FoundConsensus == true {
-											s.admissionCommittee = convertStringArraytoNetworkId(twm.NodesProposal)
+											s.admissionCommittee = make([]*network.ServerIdentity, 0)
+											for u := 0; u < len(twm.NodesProposal); u++ {
+												index, _ := strconv.Atoi(twm.NodesProposal[u])
+												s.admissionCommittee = append(s.admissionCommittee, s.rosterNodes[index])
+											}
 											fmt.Printf("Node %s reached early nodes consenses with %s and updated the roster \n", s.name, s.admissionCommittee)
 											break
 										}
@@ -768,7 +779,19 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 												}
 											}
 											// send a message to the newNode
-											joinCommitteMessage := &template.JoinAdmissionCommittee{Step: stepNow, NewCommitee: convertNetworkIdtoStringArray(s.admissionCommittee)}
+
+											NewAdmissionCommitteenodes := s.admissionCommittee
+											strNodes := make([]string, len(NewAdmissionCommitteenodes))
+											for r := 0; r < len(NewAdmissionCommitteenodes); r++ {
+												for p := 0; p < len(s.rosterNodes); p++ {
+													if string(s.rosterNodes[p].Address) == string(NewAdmissionCommitteenodes[r].Address) {
+														strNodes[r] = strconv.Itoa(p)
+														break
+													}
+												}
+											}
+
+											joinCommitteMessage := &template.JoinAdmissionCommittee{Step: stepNow, NewCommitee: strNodes}
 											unicastCommitteJoinMessage(s.admissionCommittee[i], s, joinCommitteMessage)
 										}
 
@@ -828,12 +851,10 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 							globalMaxRandomNumber := findGlobalMaxRandomNumber(s.recievedThresholdwitnessedMessages[stepNow-3])
 
 							for i := 0; i < len(CelibrityNodes); i++ {
-
+								nodeIndex, _ := strconv.Atoi(CelibrityNodes[i])
 								for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
 
-									jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
-
-									if CelibrityNodes[i] == string(jsnTwmId) {
+									if string(s.rosterNodes[nodeIndex].Address) == string(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id.Address) {
 
 										if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
 											consensusFound = true
@@ -860,12 +881,10 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 								CelibrityNodes1 = unique(CelibrityNodes1)
 
 								for i := 0; i < len(CelibrityNodes1); i++ {
-
+									nodeIndex, _ := strconv.Atoi(CelibrityNodes[i])
 									for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
 
-										jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
-
-										if CelibrityNodes1[i] == string(jsnTwmId) {
+										if string(s.rosterNodes[nodeIndex].Address) == string(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id.Address) {
 
 											if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
 												consensusFound = true
@@ -888,7 +907,11 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 							if consensusFound {
 								fmt.Printf("Found consensus with random number %d and the consensus property is %s with length %d \n", randomNumber, properConsensus, len(consensusValue))
-								s.tempNewCommittee = convertStringArraytoNetworkId(consensusValue)
+								s.tempNewCommittee = make([]*network.ServerIdentity, 0)
+								for u := 0; u < len(consensusValue); u++ {
+									index, _ := strconv.Atoi(consensusValue[u])
+									s.tempNewCommittee = append(s.tempNewCommittee, s.rosterNodes[index])
+								}
 							} else {
 								fmt.Printf("Did not find consensus\n")
 							}
@@ -899,7 +922,16 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 								if consensusFound {
 									strNodes = consensusValue
 								} else if s.tempNewCommittee != nil && len(s.tempNewCommittee) > 0 {
-									strNodes = convertNetworkIdtoStringArray(s.tempNewCommittee)
+									strNodes := make([]string, len(s.tempNewCommittee))
+									for r := 0; r < len(s.tempNewCommittee); r++ {
+										for p := 0; p < len(s.rosterNodes); p++ {
+											if string(s.rosterNodes[p].Address) == string(s.tempNewCommittee[r].Address) {
+												strNodes[r] = strconv.Itoa(p)
+												break
+											}
+										}
+									}
+
 								}
 								randomNumber := rand.Intn(s.maxNodeCount * 10000)
 
@@ -939,7 +971,18 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 													break
 												}
 											}
-											joinCommitteMessage := &template.JoinAdmissionCommittee{Step: stepNow, NewCommitee: convertNetworkIdtoStringArray(s.admissionCommittee)}
+											NewAdmissionCommitteenodes := s.admissionCommittee
+											strNodes := make([]string, len(NewAdmissionCommitteenodes))
+											for r := 0; r < len(NewAdmissionCommitteenodes); r++ {
+												for p := 0; p < len(s.rosterNodes); p++ {
+													if string(s.rosterNodes[p].Address) == string(NewAdmissionCommitteenodes[r].Address) {
+														strNodes[r] = strconv.Itoa(p)
+														break
+													}
+												}
+											}
+
+											joinCommitteMessage := &template.JoinAdmissionCommittee{Step: stepNow, NewCommitee: strNodes}
 											unicastCommitteJoinMessage(s.admissionCommittee[i], s, joinCommitteMessage)
 										}
 
@@ -972,10 +1015,19 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					}
 					if s.sentUnwitnessMessages[stepNow-1].Messagetype == 3 {
 						if s.sentUnwitnessMessages[stepNow-1].ConsensusStepNumber == 0 {
+							strNodes := make([]string, len(nodes))
+							for r := 0; r < len(nodes); r++ {
+								for p := 0; p < len(s.rosterNodes); p++ {
+									if string(s.rosterNodes[p].Address) == string(nodes[r].Address) {
+										strNodes[r] = strconv.Itoa(p)
+										break
+									}
+								}
+							}
 							unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
 								Id:                   s.ServerIdentity(),
 								SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
-								Nodes:                convertNetworkIdtoStringArray(nodes),
+								Nodes:                strNodes,
 								ConsensusRoundNumber: s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber,
 								Messagetype:          3,
 								ConsensusStepNumber:  1,
@@ -1044,12 +1096,10 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 							globalMaxRandomNumber := findGlobalMaxRandomNumber(s.recievedThresholdwitnessedMessages[stepNow-3])
 
 							for i := 0; i < len(CelibrityNodes); i++ {
-
+								nodeIndex, _ := strconv.Atoi(CelibrityNodes[i])
 								for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
 
-									jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
-
-									if CelibrityNodes[i] == string(jsnTwmId) {
+									if string(s.rosterNodes[nodeIndex].Address) == string(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id.Address) {
 
 										if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
 											consensusFound = true
@@ -1076,12 +1126,10 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 								CelibrityNodes1 = unique(CelibrityNodes1)
 
 								for i := 0; i < len(CelibrityNodes1); i++ {
-
+									nodeIndex, _ := strconv.Atoi(CelibrityNodes[i])
 									for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
 
-										jsnTwmId, _ := json.Marshal(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id)
-
-										if CelibrityNodes1[i] == string(jsnTwmId) {
+										if string(s.rosterNodes[nodeIndex].Address) == string(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id.Address) {
 
 											if s.recievedThresholdwitnessedMessages[stepNow-3][j].RandomNumber == globalMaxRandomNumber {
 												consensusFound = true
@@ -1162,7 +1210,15 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 					s.tempNewCommittee = append(s.admissionCommittee, s.newNodes...)
 					s.newNodes = make([]*network.ServerIdentity, 0)
 					nodes := s.tempNewCommittee
-					strNodes := convertNetworkIdtoStringArray(nodes)
+					strNodes := make([]string, len(nodes))
+					for r := 0; r < len(nodes); r++ {
+						for p := 0; p < len(s.rosterNodes); p++ {
+							if string(s.rosterNodes[p].Address) == string(nodes[r].Address) {
+								strNodes[r] = strconv.Itoa(p)
+								break
+							}
+						}
+					}
 					unwitnessedMessage = &template.UnwitnessedMessage{Step: s.step,
 						Id:                   s.ServerIdentity(),
 						SentArray:            convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
@@ -1233,7 +1289,11 @@ func handleJoinAdmissionCommittee(s *Service, req *template.JoinAdmissionCommitt
 		s.receivedAdmissionCommitteeJoin = true
 		fmt.Printf("%s joined the admission committee at step %d \n", s.ServerIdentity(), req.Step)
 		s.step = req.Step
-		s.admissionCommittee = convertStringArraytoNetworkId(req.NewCommitee)
+		s.admissionCommittee = make([]*network.ServerIdentity, 0)
+		for t := 0; t < len(req.NewCommitee); t++ {
+			y, _ := strconv.Atoi(req.NewCommitee[t])
+			s.admissionCommittee = append(s.admissionCommittee, s.rosterNodes[y])
+		}
 		s.majority = len(s.admissionCommittee)/2 + 1
 
 		s.sent = make([][]int, s.maxNodeCount)
@@ -1347,7 +1407,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		receivedAdmissionCommitteeJoin: false,
 	}
-	if err := s.RegisterHandlers(s.SetGenesisSet, s.InitRequest, s.JoinRequest); err != nil {
+	if err := s.RegisterHandlers(s.SetGenesisSet, s.InitRequest, s.JoinRequest, s.SetRoster); err != nil {
 		return nil, errors.New("couldn't register messages")
 	}
 
