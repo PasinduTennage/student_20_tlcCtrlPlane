@@ -881,7 +881,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 								CelibrityNodes1 = unique(CelibrityNodes1)
 
 								for i := 0; i < len(CelibrityNodes1); i++ {
-									nodeIndex, _ := strconv.Atoi(CelibrityNodes[i])
+									nodeIndex, _ := strconv.Atoi(CelibrityNodes1[i])
 									for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
 
 										if string(s.rosterNodes[nodeIndex].Address) == string(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id.Address) {
@@ -1126,7 +1126,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 								CelibrityNodes1 = unique(CelibrityNodes1)
 
 								for i := 0; i < len(CelibrityNodes1); i++ {
-									nodeIndex, _ := strconv.Atoi(CelibrityNodes[i])
+									nodeIndex, _ := strconv.Atoi(CelibrityNodes1[i])
 									for j := 0; j < len(s.recievedThresholdwitnessedMessages[stepNow-3]); j++ {
 
 										if string(s.rosterNodes[nodeIndex].Address) == string(s.recievedThresholdwitnessedMessages[stepNow-3][j].Id.Address) {

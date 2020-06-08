@@ -107,12 +107,11 @@ func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 	time.Sleep(5 * time.Second)
 
 	for i := 5; i < 7; i++ {
-		nodes = append(nodes, config.Roster.List[i])
+		nodes = append(nodes, strconv.Itoa(i))
 	}
 
-	strNodes = convertNetworkIdtoStringArray(nodes)
 	for i := 7; i < len(config.Roster.List); i++ {
-		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], strNodes)
+		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], nodes)
 	}
 
 	time.Sleep(5 * time.Second)
@@ -123,11 +122,11 @@ func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 	time.Sleep(5 * time.Second)
 
 	for i := 7; i < 9; i++ {
-		nodes = append(nodes, config.Roster.List[i])
+		nodes = append(nodes, strconv.Itoa(i))
 	}
-	strNodes = convertNetworkIdtoStringArray(nodes)
+
 	for i := 9; i < len(config.Roster.List); i++ {
-		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], strNodes)
+		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], nodes)
 	}
 
 	time.Sleep(5 * time.Second)
@@ -138,11 +137,11 @@ func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 	time.Sleep(5 * time.Second)
 
 	for i := 9; i < 11; i++ {
-		nodes = append(nodes, config.Roster.List[i])
+		nodes = append(nodes, strconv.Itoa(i))
 	}
-	strNodes = convertNetworkIdtoStringArray(nodes)
+
 	for i := 11; i < len(config.Roster.List); i++ {
-		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], strNodes)
+		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], nodes)
 	}
 	time.Sleep(100 * time.Second)
 	fmt.Printf("End of simulations\n")
