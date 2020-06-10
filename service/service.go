@@ -922,7 +922,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 								if consensusFound {
 									strNodes = consensusValue
 								} else if s.tempNewCommittee != nil && len(s.tempNewCommittee) > 0 {
-									strNodes := make([]string, len(s.tempNewCommittee))
+									strNodes = make([]string, len(s.tempNewCommittee))
 									for r := 0; r < len(s.tempNewCommittee); r++ {
 										for p := 0; p < len(s.rosterNodes); p++ {
 											if string(s.rosterNodes[p].Address) == string(s.tempNewCommittee[r].Address) {
@@ -1230,7 +1230,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 						FoundConsensus:       false}
 				}
 
-				if stepNow > 200 {
+				if stepNow > s.maxTime {
 					return
 				}
 				value, ok := s.sentUnwitnessMessages[stepNow]
@@ -1348,7 +1348,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 		step:             0,
 		stepLock:         new(sync.Mutex),
 
-		maxTime: 1000,
+		maxTime: 100,
 
 		maxNodeCount: 30,
 
