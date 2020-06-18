@@ -97,3 +97,13 @@ func (c *Client) SendRosterRequest(dst *network.ServerIdentity, roster *onet.Ros
 	}
 	return reply, nil
 }
+
+func (c *Client) SendActiveRequest(dst *network.ServerIdentity) (*ActiveStatusResponse, error) {
+	serviceReq := &ActiveStatusRequest{}
+	reply := &ActiveStatusResponse{}
+	err := c.SendProtobuf(dst, serviceReq, reply)
+	if err != nil {
+		return nil, err
+	}
+	return reply, nil
+}

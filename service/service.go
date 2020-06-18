@@ -70,6 +70,8 @@ type Service struct {
 
 	maxTime int
 
+	active bool
+
 	sentUnwitnessMessages     map[int]*template.UnwitnessedMessage
 	sentUnwitnessMessagesLock *sync.Mutex
 
@@ -292,6 +294,16 @@ func (s *Service) SetGenesisSet(req *template.GenesisNodesRequest) (*template.Ge
 	fmt.Printf("%s set the genesis set \n", s.name)
 
 	return &template.GenesisNodesResponse{}, nil
+}
+
+func (s *Service) SetActive(req *template.ActiveStatusRequest) (*template.ActiveStatusResponse, error) {
+
+	defer s.stepLock.Unlock()
+	s.stepLock.Lock()
+
+	s.active = false
+
+	return &template.ActiveStatusResponse{}, nil
 }
 
 func (s *Service) SetRoster(req *template.RosterNodesRequest) (*template.RosterNodesResponse, error) {
@@ -1204,7 +1216,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 				if unwitnessedMessage.Messagetype == 0 {
 					// end of control plane, sleep for some time, and then start a new control plane
-					time.Sleep(5 * time.Second) // analogous to one CRUX round
+					time.Sleep(10 * time.Second) // analogous to one CRUX round
 					randomNumber := rand.Intn(s.maxNodeCount * 10000)
 					fmt.Printf("%s started the membership consensus process with initial random number is %d \n", s.ServerIdentity(), randomNumber)
 					s.tempNewCommittee = append(s.admissionCommittee, s.newNodes...)
@@ -1348,7 +1360,8 @@ func newService(c *onet.Context) (onet.Service, error) {
 		step:             0,
 		stepLock:         new(sync.Mutex),
 
-		maxTime: 100,
+		maxTime: 200,
+		active:  true,
 
 		maxNodeCount: 30,
 
@@ -1407,7 +1420,7 @@ func newService(c *onet.Context) (onet.Service, error) {
 
 		receivedAdmissionCommitteeJoin: false,
 	}
-	if err := s.RegisterHandlers(s.SetGenesisSet, s.InitRequest, s.JoinRequest, s.SetRoster); err != nil {
+	if err := s.RegisterHandlers(s.SetGenesisSet, s.InitRequest, s.JoinRequest, s.SetRoster, s.SetActive); err != nil {
 		return nil, errors.New("couldn't register messages")
 	}
 
@@ -1416,68 +1429,71 @@ func newService(c *onet.Context) (onet.Service, error) {
 		defer s.stepLock.Unlock()
 		s.stepLock.Lock()
 
-		req, ok := arg1.Msg.(*template.UnwitnessedMessage)
-		if !ok {
-			log.Error(s.ServerIdentity(), "failed to cast to unwitnessed message")
-			return nil
-		}
+		if s.active {
 
-		myIndex := findIndexOf(s.vectorClockMemberList, s.name)
-
-		canDeleiver := true
-
-		reqSentArray := convertString1DtoInt2D(req.SentArray, s.maxNodeCount, s.maxNodeCount)
-
-		for i := 0; i < s.maxNodeCount; i++ {
-			if s.deliv[i] < reqSentArray[i][myIndex] {
-				canDeleiver = false
-				break
+			req, ok := arg1.Msg.(*template.UnwitnessedMessage)
+			if !ok {
+				log.Error(s.ServerIdentity(), "failed to cast to unwitnessed message")
+				return nil
 			}
+
+			myIndex := findIndexOf(s.vectorClockMemberList, s.name)
+
+			canDeleiver := true
+
+			reqSentArray := convertString1DtoInt2D(req.SentArray, s.maxNodeCount, s.maxNodeCount)
+
+			for i := 0; i < s.maxNodeCount; i++ {
+				if s.deliv[i] < reqSentArray[i][myIndex] {
+					canDeleiver = false
+					break
+				}
+			}
+
+			if canDeleiver {
+				handleUnwitnessedMessage(s, req)
+
+			} else {
+				s.bufferedUnwitnessedMessages = append(s.bufferedUnwitnessedMessages, req)
+			}
+
+			handleBufferedMessages(s)
 		}
-
-		if canDeleiver {
-			handleUnwitnessedMessage(s, req)
-
-		} else {
-			s.bufferedUnwitnessedMessages = append(s.bufferedUnwitnessedMessages, req)
-		}
-
-		handleBufferedMessages(s)
-
 		return nil
 	})
 
 	s.RegisterProcessorFunc(acknowledgementMessageMsgID, func(arg1 *network.Envelope) error {
 		defer s.stepLock.Unlock()
 		s.stepLock.Lock()
-
-		req, ok := arg1.Msg.(*template.AcknowledgementMessage)
-		if !ok {
-			log.Error(s.ServerIdentity(), "failed to cast to ack message")
-			return nil
-		}
-
-		myIndex := findIndexOf(s.vectorClockMemberList, s.name)
-
-		canDeleiver := true
-
-		reqSentArray := convertString1DtoInt2D(req.SentArray, s.maxNodeCount, s.maxNodeCount)
-
-		for i := 0; i < s.maxNodeCount; i++ {
-			if s.deliv[i] < reqSentArray[i][myIndex] {
-				canDeleiver = false
-				break
+		if s.active {
+			req, ok := arg1.Msg.(*template.AcknowledgementMessage)
+			if !ok {
+				log.Error(s.ServerIdentity(), "failed to cast to ack message")
+				return nil
 			}
+
+			myIndex := findIndexOf(s.vectorClockMemberList, s.name)
+
+			canDeleiver := true
+
+			reqSentArray := convertString1DtoInt2D(req.SentArray, s.maxNodeCount, s.maxNodeCount)
+
+			for i := 0; i < s.maxNodeCount; i++ {
+				if s.deliv[i] < reqSentArray[i][myIndex] {
+					canDeleiver = false
+					break
+				}
+			}
+
+			if canDeleiver {
+				handleAckMessage(s, req)
+
+			} else {
+				s.bufferedAckMessages = append(s.bufferedAckMessages, req)
+			}
+
+			handleBufferedMessages(s)
 		}
-
-		if canDeleiver {
-			handleAckMessage(s, req)
-
-		} else {
-			s.bufferedAckMessages = append(s.bufferedAckMessages, req)
-		}
-
-		handleBufferedMessages(s)
 		return nil
 	})
 
@@ -1485,78 +1501,86 @@ func newService(c *onet.Context) (onet.Service, error) {
 		defer s.stepLock.Unlock()
 		s.stepLock.Lock()
 
-		req, ok := arg1.Msg.(*template.WitnessedMessage)
-		if !ok {
-			log.Error(s.ServerIdentity(), "failed to cast to witnessed message")
-			return nil
-		}
-		myIndex := findIndexOf(s.vectorClockMemberList, s.name)
+		if s.active {
 
-		canDeleiver := true
-
-		reqSentArray := convertString1DtoInt2D(req.SentArray, s.maxNodeCount, s.maxNodeCount)
-
-		for i := 0; i < s.maxNodeCount; i++ {
-			if s.deliv[i] < reqSentArray[i][myIndex] {
-				canDeleiver = false
-				break
+			req, ok := arg1.Msg.(*template.WitnessedMessage)
+			if !ok {
+				log.Error(s.ServerIdentity(), "failed to cast to witnessed message")
+				return nil
 			}
+			myIndex := findIndexOf(s.vectorClockMemberList, s.name)
+
+			canDeleiver := true
+
+			reqSentArray := convertString1DtoInt2D(req.SentArray, s.maxNodeCount, s.maxNodeCount)
+
+			for i := 0; i < s.maxNodeCount; i++ {
+				if s.deliv[i] < reqSentArray[i][myIndex] {
+					canDeleiver = false
+					break
+				}
+			}
+
+			if canDeleiver {
+				handleWitnessedMessage(s, req)
+
+			} else {
+				s.bufferedWitnessedMessages = append(s.bufferedWitnessedMessages, req)
+			}
+
+			handleBufferedMessages(s)
 		}
-
-		if canDeleiver {
-			handleWitnessedMessage(s, req)
-
-		} else {
-			s.bufferedWitnessedMessages = append(s.bufferedWitnessedMessages, req)
-		}
-
-		handleBufferedMessages(s)
 		return nil
 	})
 
 	s.RegisterProcessorFunc(nodeJoinRequestMessageMsgID, func(arg1 *network.Envelope) error {
-
-		req, ok := arg1.Msg.(*template.NodeJoinRequest)
-		if !ok {
-			log.Error(s.ServerIdentity(), "failed to cast to node join request message")
-			return nil
+		if s.active {
+			req, ok := arg1.Msg.(*template.NodeJoinRequest)
+			if !ok {
+				log.Error(s.ServerIdentity(), "failed to cast to node join request message")
+				return nil
+			}
+			handleJoinRequestMessage(s, req)
 		}
-		handleJoinRequestMessage(s, req)
 		return nil
 	})
 
 	s.RegisterProcessorFunc(nodeJoinResponseMessageMsgID, func(arg1 *network.Envelope) error {
-
-		req, ok := arg1.Msg.(*template.NodeJoinResponse)
-		if !ok {
-			log.Error(s.ServerIdentity(), "failed to cast to node join response message")
-			return nil
+		if s.active {
+			req, ok := arg1.Msg.(*template.NodeJoinResponse)
+			if !ok {
+				log.Error(s.ServerIdentity(), "failed to cast to node join response message")
+				return nil
+			}
+			handleJoinResponseMessage(s, req)
 		}
-		handleJoinResponseMessage(s, req)
 		return nil
 	})
 
 	s.RegisterProcessorFunc(nodeJoinConfirmationMessageMsgID, func(arg1 *network.Envelope) error {
-
-		req, ok := arg1.Msg.(*template.NodeJoinConfirmation)
-		if !ok {
-			log.Error(s.ServerIdentity(), "failed to cast to node join confirmation message")
-			return nil
+		if s.active {
+			req, ok := arg1.Msg.(*template.NodeJoinConfirmation)
+			if !ok {
+				log.Error(s.ServerIdentity(), "failed to cast to node join confirmation message")
+				return nil
+			}
+			handleJoinConfirmationMessage(s, req)
 		}
-		handleJoinConfirmationMessage(s, req)
 		return nil
 	})
 
 	s.RegisterProcessorFunc(nodeJoinAdmissionCommitteeMessageMsgID, func(arg1 *network.Envelope) error {
-
-		req, ok := arg1.Msg.(*template.JoinAdmissionCommittee)
-		if !ok {
-			log.Error(s.ServerIdentity(), "failed to cast to node join admission committee message")
-			return nil
+		if s.active {
+			req, ok := arg1.Msg.(*template.JoinAdmissionCommittee)
+			if !ok {
+				log.Error(s.ServerIdentity(), "failed to cast to node join admission committee message")
+				return nil
+			}
+			handleJoinAdmissionCommittee(s, req)
 		}
-		handleJoinAdmissionCommittee(s, req)
 		return nil
 	})
+
 	return s, nil
 }
 

@@ -145,3 +145,7 @@ type RosterNodesRequest struct {
 // SignatureResponse is what the Cosi service will reply to clients.
 type RosterNodesResponse struct {
 }
+
+type ActiveStatusRequest struct{}
+
+type ActiveStatusResponse struct{}
