@@ -324,15 +324,15 @@ func (s *Service) SetRoster(req *template.RosterNodesRequest) (*template.RosterN
 
 	// delay node 1
 
-	for i := 0; i < s.maxNodeCount; i++ {
-		s.nodeDelays[i][1] = 100
-		s.nodeDelays[i][2] = 100
-		s.nodeDelays[i][3] = 100
-		s.nodeDelays[i][4] = 100
-		s.nodeDelays[i][5] = 100
-		s.nodeDelays[i][6] = 100
-		s.nodeDelays[i][7] = 100
-	}
+	//for i := 0; i < s.maxNodeCount; i++ {
+	//	s.nodeDelays[i][1] = 100
+	//	s.nodeDelays[i][2] = 100
+	//	s.nodeDelays[i][3] = 100
+	//	s.nodeDelays[i][4] = 100
+	//	s.nodeDelays[i][5] = 100
+	//	s.nodeDelays[i][6] = 100
+	//	s.nodeDelays[i][7] = 100
+	//}
 
 	return &template.RosterNodesResponse{}, nil
 }

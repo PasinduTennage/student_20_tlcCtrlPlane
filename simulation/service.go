@@ -231,7 +231,7 @@ func (s *SimulationService) Simulation2(config *onet.SimulationConfig) error {
 }
 
 func (s *SimulationService) Simulation3(config *onet.SimulationConfig) error {
-	numGenesis := 10
+	numGenesis := 15
 	nodes := make([]string, numGenesis)
 	clients := make([]*template.Client, len(config.Roster.List))
 
