@@ -41,8 +41,8 @@ type Service struct {
 	// We need to embed the ServiceProcessor, so that incoming messages
 	// are correctly handled.
 	*onet.ServiceProcessor
-
-	storage *storage
+	nodeDelays [][]int
+	storage    *storage
 
 	maxConsensusRounds int
 
@@ -312,6 +312,27 @@ func (s *Service) SetRoster(req *template.RosterNodesRequest) (*template.RosterN
 	s.stepLock.Lock()
 
 	s.rosterNodes = req.Roster.List
+
+	s.nodeDelays = make([][]int, s.maxNodeCount)
+
+	for i := 0; i < s.maxNodeCount; i++ {
+		s.nodeDelays[i] = make([]int, s.maxNodeCount)
+		for j := 0; j < s.maxNodeCount; j++ {
+			s.nodeDelays[i][j] = 20
+		}
+	}
+
+	// delay node 1
+
+	for i := 0; i < s.maxNodeCount; i++ {
+		s.nodeDelays[i][1] = 100
+		s.nodeDelays[i][2] = 100
+		s.nodeDelays[i][3] = 100
+		s.nodeDelays[i][4] = 100
+		s.nodeDelays[i][5] = 100
+		s.nodeDelays[i][6] = 100
+		s.nodeDelays[i][7] = 100
+	}
 
 	return &template.RosterNodesResponse{}, nil
 }
@@ -1354,13 +1375,19 @@ func handleJoinAdmissionCommittee(s *Service, req *template.JoinAdmissionCommitt
 	}
 }
 
+func delayReception(s *Service, senderIndex int, receiverIndex int) {
+	delay := s.nodeDelays[senderIndex][receiverIndex]
+	time.Sleep(time.Duration(delay) * time.Millisecond)
+	return
+}
+
 func newService(c *onet.Context) (onet.Service, error) {
 	s := &Service{
 		ServiceProcessor: onet.NewServiceProcessor(c),
 		step:             0,
 		stepLock:         new(sync.Mutex),
 
-		maxTime: 200,
+		maxTime: 50,
 		active:  true,
 
 		maxNodeCount: 30,
@@ -1438,7 +1465,8 @@ func newService(c *onet.Context) (onet.Service, error) {
 			}
 
 			myIndex := findIndexOf(s.vectorClockMemberList, s.name)
-
+			senderIndex := findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+			delayReception(s, senderIndex, myIndex)
 			canDeleiver := true
 
 			reqSentArray := convertString1DtoInt2D(req.SentArray, s.maxNodeCount, s.maxNodeCount)
@@ -1473,6 +1501,8 @@ func newService(c *onet.Context) (onet.Service, error) {
 			}
 
 			myIndex := findIndexOf(s.vectorClockMemberList, s.name)
+			senderIndex := findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+			delayReception(s, senderIndex, myIndex)
 
 			canDeleiver := true
 
@@ -1509,6 +1539,8 @@ func newService(c *onet.Context) (onet.Service, error) {
 				return nil
 			}
 			myIndex := findIndexOf(s.vectorClockMemberList, s.name)
+			senderIndex := findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+			delayReception(s, senderIndex, myIndex)
 
 			canDeleiver := true
 
