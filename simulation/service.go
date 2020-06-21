@@ -258,6 +258,6 @@ func (s *SimulationService) Simulation3(config *onet.SimulationConfig) error {
 // Run is used on the destination machines and runs a number of
 // rounds
 func (s *SimulationService) Run(config *onet.SimulationConfig) error {
-	s.Simulation2(config)
+	s.Simulation1(config)
 	return nil
 }

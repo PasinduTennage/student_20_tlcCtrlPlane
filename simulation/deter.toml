@@ -1,0 +1,15 @@
+Login = "pasindut"
+Host = "users.deterlab.net"
+Project = "SAFER"
+Experiment = "Async-Control-Plane"
+ProxyAddress = "localhost"
+MonitorAddress = "users.isi.deterlab.net"
+MonitorPort = 10000
+Servers = 11
+Simulation = "TemplateService"
+Hosts = 0
+Debug = 0
+RunWait = ""
+Suite = "Ed25519"
+PreScript = ""
+Tags = ""
