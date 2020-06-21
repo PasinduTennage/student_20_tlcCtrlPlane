@@ -41,8 +41,10 @@ type Service struct {
 	// We need to embed the ServiceProcessor, so that incoming messages
 	// are correctly handled.
 	*onet.ServiceProcessor
-	nodeDelays [][]int
-	storage    *storage
+	nodeDelays        [][]int
+	storage           *storage
+	startTime         time.Time
+	lastEpchStartTime time.Time
 
 	maxConsensusRounds int
 
@@ -145,10 +147,12 @@ func findIndexOf(array []string, item string) int {
 func broadcastUnwitnessedMessage(memberNodes []*network.ServerIdentity, s *Service, message *template.UnwitnessedMessage) {
 	for _, node := range memberNodes {
 		e := s.SendRaw(node, message)
-
-		senderIndex := findIndexOf(s.vectorClockMemberList, s.name)
-		receiverIndex := findIndexOf(s.vectorClockMemberList, string(node.Address))
-
+		senderIndex := -1
+		receiverIndex := -1
+		for senderIndex == -1 || receiverIndex == -1 {
+			senderIndex = findIndexOf(s.vectorClockMemberList, s.name)
+			receiverIndex = findIndexOf(s.vectorClockMemberList, string(node.Address))
+		}
 		s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
 
 		if e != nil {
@@ -160,9 +164,12 @@ func broadcastUnwitnessedMessage(memberNodes []*network.ServerIdentity, s *Servi
 func broadcastWitnessedMessage(memberNodes []*network.ServerIdentity, s *Service, message *template.WitnessedMessage) {
 	for _, node := range memberNodes {
 		e := s.SendRaw(node, message)
-
-		senderIndex := findIndexOf(s.vectorClockMemberList, s.name)
-		receiverIndex := findIndexOf(s.vectorClockMemberList, string(node.Address))
+		senderIndex := -1
+		receiverIndex := -1
+		for senderIndex == -1 || receiverIndex == -1 {
+			senderIndex = findIndexOf(s.vectorClockMemberList, s.name)
+			receiverIndex = findIndexOf(s.vectorClockMemberList, string(node.Address))
+		}
 
 		s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
 
@@ -174,10 +181,12 @@ func broadcastWitnessedMessage(memberNodes []*network.ServerIdentity, s *Service
 
 func unicastAcknowledgementMessage(memberNode *network.ServerIdentity, s *Service, message *template.AcknowledgementMessage) {
 	e := s.SendRaw(memberNode, message)
-
-	senderIndex := findIndexOf(s.vectorClockMemberList, s.name)
-	receiverIndex := findIndexOf(s.vectorClockMemberList, string(memberNode.Address))
-
+	senderIndex := -1
+	receiverIndex := -1
+	for senderIndex == -1 || receiverIndex == -1 {
+		senderIndex = findIndexOf(s.vectorClockMemberList, s.name)
+		receiverIndex = findIndexOf(s.vectorClockMemberList, string(memberNode.Address))
+	}
 	s.sent[senderIndex][receiverIndex] = s.sent[senderIndex][receiverIndex] + 1
 
 	if e != nil {
@@ -238,7 +247,7 @@ func (s *Service) InitRequest(req *template.InitRequest) (*template.InitResponse
 
 	defer s.stepLock.Unlock()
 	s.stepLock.Lock()
-
+	s.lastEpchStartTime = time.Now()
 	unwitnessedMessage := &template.UnwitnessedMessage{Step: s.step,
 		Id:          s.ServerIdentity(),
 		SentArray:   convertInt2DtoString1D(s.sent, s.maxNodeCount, s.maxNodeCount),
@@ -291,7 +300,7 @@ func (s *Service) SetGenesisSet(req *template.GenesisNodesRequest) (*template.Ge
 		s.vectorClockMemberList[i] = ""
 	}
 
-	fmt.Printf("%s set the genesis set \n", s.name)
+	//fmt.Printf("%s set the genesis set \n", s.name)
 
 	return &template.GenesisNodesResponse{}, nil
 }
@@ -487,6 +496,9 @@ func handleAckMessage(s *Service, req *template.AcknowledgementMessage) {
 	}
 
 	reqIndex := findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+	for reqIndex == -1 {
+		reqIndex = findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+	}
 
 	s.deliv[reqIndex] = s.deliv[reqIndex] + 1
 
@@ -617,6 +629,9 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 	}
 
 	reqIndex := findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+	for reqIndex == -1 {
+		reqIndex = findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+	}
 
 	s.deliv[reqIndex] = s.deliv[reqIndex] + 1
 
@@ -660,7 +675,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 
 				s.step = s.step + 1
 				stepNow = s.step
-				fmt.Printf("%s increased time step to %d \n", s.ServerIdentity(), stepNow)
+				//fmt.Printf("%s increased time step to %d \n", s.ServerIdentity(), stepNow)
 
 				var unwitnessedMessage *template.UnwitnessedMessage
 				if stepNow == 1 {
@@ -781,7 +796,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 								}
 								if numSeenConsensus > 0 {
 									// someone has seen the consensus, so let's move on
-									fmt.Printf("The nodes reach the node consenses in %d number of rounds\n", s.maxConsensusRounds-s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber)
+									//fmt.Printf("The nodes reach the node consenses in %d number of rounds\n", s.maxConsensusRounds-s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber)
 									for _, twm := range s.recievedThresholdwitnessedMessages[stepNow-2] {
 										if twm.FoundConsensus == true {
 											s.admissionCommittee = make([]*network.ServerIdentity, 0)
@@ -946,7 +961,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 									s.tempNewCommittee = append(s.tempNewCommittee, s.rosterNodes[index])
 								}
 							} else {
-								fmt.Printf("Did not find consensus\n")
+								//fmt.Printf("Did not find consensus\n")
 							}
 
 							if s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber > 1 {
@@ -968,7 +983,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 								}
 								randomNumber := rand.Intn(s.maxNodeCount * 10000)
 
-								fmt.Printf("%s's new proposal random number is %d \n", s.ServerIdentity(), randomNumber)
+								//fmt.Printf("%s's new proposal random number is %d \n", s.ServerIdentity(), randomNumber)
 
 								unwitnessedMessage = &template.UnwitnessedMessage{Step: stepNow,
 									Id:                   s.ServerIdentity(),
@@ -1187,7 +1202,7 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 								fmt.Printf("Found consensus with random number %d and the consensus property is %s \n", randomNumber, properConsensus)
 								s.tempPingConsensus = consensusValue
 							} else {
-								fmt.Printf("Did not find consensus\n")
+								//fmt.Printf("Did not find consensus\n")
 							}
 
 							if s.sentUnwitnessMessages[stepNow-1].ConsensusRoundNumber > 1 {
@@ -1236,8 +1251,13 @@ func handleWitnessedMessage(s *Service, req *template.WitnessedMessage) {
 				}
 
 				if unwitnessedMessage.Messagetype == 0 {
-					// end of control plane, sleep for some time, and then start a new control plane
-					time.Sleep(10 * time.Second) // analogous to one CRUX round
+					// end of control plane
+					fmt.Printf("Time is %s and the number of nodes is %d\n", time.Since(s.startTime), len(s.admissionCommittee))
+					for len(s.newNodes) == 0 || time.Since(s.lastEpchStartTime) < 10 {
+						time.Sleep(1 * time.Millisecond)
+					}
+					s.lastEpchStartTime = time.Now()
+					// analogous to one CRUX round
 					randomNumber := rand.Intn(s.maxNodeCount * 10000)
 					fmt.Printf("%s started the membership consensus process with initial random number is %d \n", s.ServerIdentity(), randomNumber)
 					s.tempNewCommittee = append(s.admissionCommittee, s.newNodes...)
@@ -1319,6 +1339,7 @@ func handleJoinConfirmationMessage(s *Service, req *template.NodeJoinConfirmatio
 func handleJoinAdmissionCommittee(s *Service, req *template.JoinAdmissionCommittee) {
 
 	if !s.receivedAdmissionCommitteeJoin {
+		s.lastEpchStartTime = time.Now()
 		s.receivedAdmissionCommitteeJoin = true
 		fmt.Printf("%s joined the admission committee at step %d \n", s.ServerIdentity(), req.Step)
 		s.step = req.Step
@@ -1386,9 +1407,9 @@ func newService(c *onet.Context) (onet.Service, error) {
 		ServiceProcessor: onet.NewServiceProcessor(c),
 		step:             0,
 		stepLock:         new(sync.Mutex),
-
-		maxTime: 50,
-		active:  true,
+		startTime:        time.Now(),
+		maxTime:          200,
+		active:           true,
 
 		maxNodeCount: 30,
 
@@ -1465,7 +1486,17 @@ func newService(c *onet.Context) (onet.Service, error) {
 			}
 
 			myIndex := findIndexOf(s.vectorClockMemberList, s.name)
+
+			for myIndex == -1 {
+				myIndex = findIndexOf(s.vectorClockMemberList, s.name)
+			}
+
 			senderIndex := findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+
+			for senderIndex == -1 {
+				senderIndex = findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+			}
+
 			delayReception(s, senderIndex, myIndex)
 			canDeleiver := true
 
@@ -1501,7 +1532,17 @@ func newService(c *onet.Context) (onet.Service, error) {
 			}
 
 			myIndex := findIndexOf(s.vectorClockMemberList, s.name)
+
+			for myIndex == -1 {
+				myIndex = findIndexOf(s.vectorClockMemberList, s.name)
+			}
+
 			senderIndex := findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+
+			for senderIndex == -1 {
+				senderIndex = findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+			}
+
 			delayReception(s, senderIndex, myIndex)
 
 			canDeleiver := true
@@ -1539,7 +1580,17 @@ func newService(c *onet.Context) (onet.Service, error) {
 				return nil
 			}
 			myIndex := findIndexOf(s.vectorClockMemberList, s.name)
+
+			for myIndex == -1 {
+				myIndex = findIndexOf(s.vectorClockMemberList, s.name)
+			}
+
 			senderIndex := findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+
+			for senderIndex == -1 {
+				senderIndex = findIndexOf(s.vectorClockMemberList, string(req.Id.Address))
+			}
+
 			delayReception(s, senderIndex, myIndex)
 
 			canDeleiver := true
@@ -1622,6 +1673,10 @@ func handleBufferedMessages(s *Service) {
 
 		myIndex := findIndexOf(s.vectorClockMemberList, s.name)
 
+		for myIndex == -1 {
+			myIndex = findIndexOf(s.vectorClockMemberList, s.name)
+		}
+
 		processedBufferedMessages := make([]int, 0)
 		for k := 0; k < len(s.bufferedUnwitnessedMessages); k++ {
 
@@ -1656,6 +1711,10 @@ func handleBufferedMessages(s *Service) {
 
 		myIndex := findIndexOf(s.vectorClockMemberList, s.name)
 
+		for myIndex == -1 {
+			myIndex = findIndexOf(s.vectorClockMemberList, s.name)
+		}
+
 		processedBufferedMessages := make([]int, 0)
 		for k := 0; k < len(s.bufferedAckMessages); k++ {
 
@@ -1689,6 +1748,10 @@ func handleBufferedMessages(s *Service) {
 	if len(s.bufferedWitnessedMessages) > 0 {
 
 		myIndex := findIndexOf(s.vectorClockMemberList, s.name)
+
+		for myIndex == -1 {
+			myIndex = findIndexOf(s.vectorClockMemberList, s.name)
+		}
 
 		processedBufferedMessages := make([]int, 0)
 

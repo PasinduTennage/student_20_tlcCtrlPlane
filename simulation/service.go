@@ -87,7 +87,7 @@ func (s *SimulationService) Simulation1(config *onet.SimulationConfig) error {
 		_, _ = clients[i].SendInitRequest(config.Roster.List[i])
 	}
 
-	time.Sleep(8 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	fmt.Printf("Started Round 1 \n")
 
@@ -95,7 +95,7 @@ func (s *SimulationService) Simulation1(config *onet.SimulationConfig) error {
 		_, _ = clients[i].SendJoinRequest(config.Roster.List[i])
 	}
 
-	time.Sleep(8 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	for i := 5; i < 7; i++ {
 		nodes = append(nodes, strconv.Itoa(i))
@@ -105,13 +105,11 @@ func (s *SimulationService) Simulation1(config *onet.SimulationConfig) error {
 		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], nodes)
 	}
 
-	time.Sleep(1 * time.Second)
-
 	fmt.Printf("Started Round 2 \n")
 	for i := 7; i < 9; i++ {
 		_, _ = clients[i].SendJoinRequest(config.Roster.List[i])
 	}
-	time.Sleep(8 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	for i := 7; i < 9; i++ {
 		nodes = append(nodes, strconv.Itoa(i))
@@ -121,13 +119,11 @@ func (s *SimulationService) Simulation1(config *onet.SimulationConfig) error {
 		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], nodes)
 	}
 
-	time.Sleep(1 * time.Second)
-
 	fmt.Printf("Started Round 3 \n")
 	for i := 9; i < 11; i++ {
 		_, _ = clients[i].SendJoinRequest(config.Roster.List[i])
 	}
-	time.Sleep(8 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	for i := 9; i < 11; i++ {
 		nodes = append(nodes, strconv.Itoa(i))
@@ -136,13 +132,12 @@ func (s *SimulationService) Simulation1(config *onet.SimulationConfig) error {
 	for i := 11; i < len(config.Roster.List); i++ {
 		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], nodes)
 	}
-	time.Sleep(1 * time.Second)
 
 	fmt.Printf("Started Round 4 \n")
 	for i := 11; i < 13; i++ {
 		_, _ = clients[i].SendJoinRequest(config.Roster.List[i])
 	}
-	time.Sleep(8 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	for i := 11; i < 13; i++ {
 		nodes = append(nodes, strconv.Itoa(i))
@@ -152,13 +147,11 @@ func (s *SimulationService) Simulation1(config *onet.SimulationConfig) error {
 		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], nodes)
 	}
 
-	time.Sleep(1 * time.Second)
-
 	fmt.Printf("Started Round 5 \n")
 	for i := 13; i < 15; i++ {
 		_, _ = clients[i].SendJoinRequest(config.Roster.List[i])
 	}
-	time.Sleep(8 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	for i := 13; i < 15; i++ {
 		nodes = append(nodes, strconv.Itoa(i))
@@ -168,7 +161,7 @@ func (s *SimulationService) Simulation1(config *onet.SimulationConfig) error {
 		_, _ = clients[i].SetGenesisSignersRequest(config.Roster.List[i], nodes)
 	}
 
-	time.Sleep(30 * time.Second)
+	time.Sleep(100 * time.Second)
 
 	fmt.Printf("End of simulations\n")
 	return nil
@@ -200,7 +193,7 @@ func (s *SimulationService) Simulation2(config *onet.SimulationConfig) error {
 		_, _ = clients[i].SendInitRequest(config.Roster.List[i])
 	}
 
-	time.Sleep(8 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	fmt.Printf("Started Round 1 \n")
 
@@ -208,7 +201,7 @@ func (s *SimulationService) Simulation2(config *onet.SimulationConfig) error {
 		_, _ = clients[i].SendActiveRequest(config.Roster.List[i])
 	}
 
-	time.Sleep(8 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	fmt.Printf("Started Round 2 \n")
 
@@ -216,7 +209,7 @@ func (s *SimulationService) Simulation2(config *onet.SimulationConfig) error {
 		_, _ = clients[i].SendActiveRequest(config.Roster.List[i])
 	}
 
-	time.Sleep(8 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	fmt.Printf("Started Round 3 \n")
 
@@ -265,6 +258,6 @@ func (s *SimulationService) Simulation3(config *onet.SimulationConfig) error {
 // Run is used on the destination machines and runs a number of
 // rounds
 func (s *SimulationService) Run(config *onet.SimulationConfig) error {
-	s.Simulation3(config)
+	s.Simulation2(config)
 	return nil
 }
