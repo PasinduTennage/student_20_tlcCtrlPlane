@@ -8,7 +8,7 @@ DBG_APP=2
 
 main(){
     startTest
-    buildConode github.com/dedis/cothority_template/service
+    buildConode github.com/dedis/student_20_tlcCtrlPlane/service
     run testCount
     run testTime
     stopTest
